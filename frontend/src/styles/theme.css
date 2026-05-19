@@ -1,0 +1,102 @@
+:root {
+    /* ── Backgrounds (Slate Blue) ── */
+    --bg-root: #2b4754;
+    --bg-surface: #2d4558;
+    --bg-elevated: #375268;
+    --bg-sidebar: #1e3343;
+    --bg-overlay: rgba(24, 36, 46, 0.88);
+    --bg-gradient: linear-gradient(to right, #243949 0%, #517fa4 100%);
+
+    /* ── Text ── */
+    --text-primary: #edf2f6;
+    --text-secondary: #b0c4d0;
+    --text-tertiary: #7a94a5;
+    --text-inverse: #1a2d3c;
+
+    /* ── Accent (muted blue-gray #92b6c2) ── */
+    --accent: #92b6c2;
+    --accent-light: #b5d3dc;
+    --accent-bright: #a3c8d4;
+    --accent-dim: #5a8796;
+    --accent-glow: rgba(146, 182, 194, 0.2);
+
+    
+    /* ── Emphasis ── */
+    --emphasis: #edf2f6;
+    --emphasis-dim: rgba(237, 242, 246, 0.10);
+    --emphasis-glow: rgba(237, 242, 246, 0.05);
+
+    /* ── Borders ── */
+    --border-default: rgba(237, 242, 246, 0.07);
+    --border-light: rgba(237, 242, 246, 0.04);
+    --border-strong: rgba(237, 242, 246, 0.12);
+
+    /* ── Status ── */
+    --status-green: #6baf8c;
+    --status-green-bg: rgba(107, 175, 140, 0.12);
+    --status-green-glow: rgba(107, 175, 140, 0.35);
+    --status-yellow: #c9a85c;
+    --status-yellow-bg: rgba(201, 168, 92, 0.12);
+    --status-yellow-glow: rgba(201, 168, 92, 0.35);
+    --status-red: #c9706a;
+    --status-red-bg: rgba(201, 112, 106, 0.12);
+    --status-red-glow: rgba(201, 112, 106, 0.35);
+
+    /* ── Typography ── */
+    --font-sans: 'DM Sans', 'PingFang SC', 'Microsoft YaHei', 'Heiti SC',
+        'Noto Sans CJK SC', sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+
+    --fw-regular: 400;
+    --fw-medium: 500;
+    --fw-semibold: 600;
+    --fw-bold: 700;
+
+    --fs-xs: 0.75rem;
+    --fs-sm: 0.8125rem;
+    --fs-base: 0.875rem;
+    --fs-md: 0.9375rem;
+    --fs-lg: 1.0625rem;
+    --fs-xl: 1.25rem;
+    --fs-2xl: 1.5rem;
+    --fs-3xl: 2rem;
+
+    --lh-tight: 1.25;
+    --lh-normal: 1.5;
+    --lh-relaxed: 1.7;
+
+    /* ── Spacing ── */
+    --sidebar-collapsed: 72px;
+    --sidebar-expanded: 260px;
+    --header-height: 56px;
+
+    /* ── Radii ── */
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+    --radius-full: 9999px;
+
+    /* ── Shadows ── */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45);
+    --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.55);
+
+    /* ── Transitions ── */
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+    --duration-fast: 150ms;
+    --duration-normal: 250ms;
+    --duration-slow: 400ms;
+}
+
+body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+        radial-gradient(ellipse at 60% 0%, var(--accent-glow) 0%, transparent 60%),
+        radial-gradient(ellipse at 30% 100%, rgba(0, 0, 0, 0.25) 0%, transparent 50%);
+}
