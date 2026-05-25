@@ -1,19 +1,34 @@
 import axios from 'axios'
-import { message } from 'ant-design-vue'
+
+const STORAGE_KEY = 'rag-copilot-api-key'
 
 const client = axios.create({
-  baseURL: '/api/v1',
+  baseURL: 'http://localhost:3001/api',
   timeout: 30000,
-  headers: { 'Content-Type': 'application/json' }
+  headers: {
+    'Content-Type': 'application/json',
+  },
+})
+
+client.interceptors.request.use((config) => {
+  try {
+    const apiKey = localStorage.getItem(STORAGE_KEY)
+    if (apiKey) {
+      config.headers['X-DeepSeek-API-Key'] = apiKey
+    }
+  } catch {
+    // localStorage unavailable
+  }
+  return config
 })
 
 client.interceptors.response.use(
-  res => res,
-  error => {
-    const msg = error.response?.data?.detail || error.message || '请求失败'
-    message.error(msg)
+  (response) => response.data,
+  (error) => {
+    const message = error.response?.data?.message || error.message || 'Request failed'
+    console.error(`[API Error] ${message}`)
     return Promise.reject(error)
-  }
+  },
 )
 
 export default client

@@ -1,0 +1,304 @@
+/* ===== Element Plus theme override =====
+   Maps Element Plus CSS variables to our custom theme palette.
+   Dark theme (default) and light theme (html.light). */
+
+/* ========== Dark Theme (default) ========== */
+:root {
+  /* --- Brand / Primary = accent teal --- */
+  --el-color-primary: var(--accent);
+  --el-color-primary-light-3: #57ddbc;
+  --el-color-primary-light-5: #81e7d0;
+  --el-color-primary-light-7: #abf0e2;
+  --el-color-primary-light-8: #c2f4ea;
+  --el-color-primary-light-9: #d8f8f2;
+  --el-color-primary-dark-2: #24aa86;
+
+  /* --- Backgrounds --- */
+  --el-bg-color: var(--bg-primary);
+  --el-bg-color-overlay: var(--bg-card);
+  --el-bg-color-page: var(--bg-primary);
+
+  /* --- Text --- */
+  --el-text-color-primary: var(--text-primary);
+  --el-text-color-regular: var(--text-secondary);
+  --el-text-color-secondary: var(--text-muted);
+  --el-text-color-placeholder: var(--text-muted);
+  --el-text-color-disabled: rgba(160, 168, 164, 0.4);
+
+  /* --- Border --- */
+  --el-border-color: var(--border-light);
+  --el-border-color-light: var(--border-color);
+  --el-border-color-lighter: rgba(255, 255, 255, 0.04);
+  --el-border-color-extra-light: rgba(255, 255, 255, 0.02);
+  --el-border-color-dark: rgba(255, 255, 255, 0.14);
+
+  /* --- Fill (used for buttons, tags, inputs) --- */
+  --el-fill-color: var(--bg-secondary);
+  --el-fill-color-light: var(--bg-card);
+  --el-fill-color-lighter: var(--bg-card-hover);
+  --el-fill-color-blank: transparent;
+
+  /* --- Semantic colors --- */
+  --el-color-success: var(--success);
+  --el-color-success-light-3: #57ddbc;
+  --el-color-success-light-5: #81e7d0;
+  --el-color-success-light-7: #abf0e2;
+  --el-color-success-light-8: #c2f4ea;
+  --el-color-success-light-9: #d8f8f2;
+  --el-color-success-dark-2: #24aa86;
+
+  --el-color-warning: var(--warning);
+  --el-color-warning-light-3: #edc87b;
+  --el-color-warning-light-5: #f2d89d;
+  --el-color-warning-light-7: #f7e8bf;
+  --el-color-warning-light-8: #faf0d3;
+  --el-color-warning-light-9: #fcf7e8;
+  --el-color-warning-dark-2: #c49a3d;
+
+  --el-color-danger: var(--danger);
+  --el-color-danger-light-3: #ee937b;
+  --el-color-danger-light-5: #f4af9d;
+  --el-color-danger-light-7: #f8ccbf;
+  --el-color-danger-light-8: #fadbd3;
+  --el-color-danger-light-9: #fceae6;
+  --el-color-danger-dark-2: #e44038;
+
+  --el-color-info: var(--text-muted);
+  --el-color-info-light-3: #858f8c;
+  --el-color-info-light-5: #a1a8a6;
+  --el-color-info-light-7: #bfc3c1;
+  --el-color-info-light-8: #d1d4d3;
+  --el-color-info-light-9: #e3e5e4;
+  --el-color-info-dark-2: #525a57;
+
+  /* --- Disabled --- */
+  --el-disabled-bg-color: var(--bg-secondary);
+  --el-disabled-text-color: rgba(160, 168, 164, 0.3);
+  --el-disabled-border-color: var(--border-color);
+
+  /* --- Border radius --- */
+  --el-border-radius-base: var(--radius-sm);
+  --el-border-radius-small: 4px;
+  --el-border-radius-round: 20px;
+
+  /* --- Typography --- */
+  --el-font-family: var(--font-body);
+
+  /* --- Box shadow --- */
+  --el-box-shadow: 0 4px 24px var(--shadow-color);
+  --el-box-shadow-light: 0 2px 12px var(--shadow-color);
+  --el-box-shadow-lighter: 0 1px 6px var(--shadow-color);
+  --el-box-shadow-dark: 0 8px 32px rgba(0, 0, 0, 0.4);
+
+  /* --- Dialog / Modal --- */
+  --el-dialog-bg-color: var(--bg-card);
+  --el-dialog-border-radius: var(--radius-lg);
+
+  /* --- Popover / Dropdown --- */
+  --el-popover-bg-color: var(--bg-card);
+  --el-popover-border-color: var(--border-light);
+
+  /* --- Input --- */
+  --el-input-bg-color: var(--bg-input);
+  --el-input-border-color: var(--border-light);
+  --el-input-hover-border-color: var(--accent-dim);
+  --el-input-focus-border-color: var(--accent);
+  --el-input-placeholder-color: var(--text-muted);
+  --el-input-text-color: var(--text-primary);
+
+  /* --- Button --- */
+  --el-button-bg-color: var(--bg-card);
+  --el-button-border-color: var(--border-light);
+  --el-button-hover-bg-color: var(--bg-card-hover);
+  --el-button-hover-border-color: var(--accent-dim);
+  --el-button-active-bg-color: var(--bg-secondary);
+  --el-button-text-color: var(--text-primary);
+
+  /* --- Table --- */
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: var(--bg-secondary);
+  --el-table-row-hover-bg-color: var(--bg-card-hover);
+  --el-table-border-color: var(--border-color);
+  --el-table-text-color: var(--text-primary);
+  --el-table-header-text-color: var(--text-secondary);
+
+  /* --- Tag --- */
+  --el-tag-bg-color: var(--bg-secondary);
+  --el-tag-border-color: var(--border-color);
+  --el-tag-text-color: var(--text-secondary);
+
+  /* --- Pagination --- */
+  --el-pagination-bg-color: transparent;
+  --el-pagination-button-bg-color: var(--bg-card);
+  --el-pagination-hover-color: var(--accent);
+
+  /* --- Menu (sidebar nav compatibility) --- */
+  --el-menu-bg-color: transparent;
+  --el-menu-text-color: var(--text-secondary);
+  --el-menu-hover-bg-color: var(--bg-card);
+  --el-menu-active-color: var(--accent);
+
+  /* --- Select / Cascader --- */
+  --el-select-border-color-hover: var(--accent-dim);
+  --el-select-input-focus-border-color: var(--accent);
+
+  /* --- Slider --- */
+  --el-slider-main-bg-color: var(--accent);
+  --el-slider-runway-bg-color: var(--bg-secondary);
+}
+
+/* ========== Light Theme ========== */
+html.light {
+  --el-color-primary: var(--accent);
+  --el-color-primary-light-3: #3d9689;
+  --el-color-primary-light-5: #65b2a7;
+  --el-color-primary-light-7: #8eccc5;
+  --el-color-primary-light-8: #a5d7d1;
+  --el-color-primary-light-9: #bbe2de;
+  --el-color-primary-dark-2: #156259;
+
+  --el-bg-color: var(--bg-primary);
+  --el-bg-color-overlay: var(--bg-card);
+  --el-bg-color-page: var(--bg-primary);
+
+  --el-text-color-primary: var(--text-primary);
+  --el-text-color-regular: var(--text-secondary);
+  --el-text-color-secondary: var(--text-muted);
+  --el-text-color-placeholder: var(--text-muted);
+  --el-text-color-disabled: rgba(138, 155, 146, 0.4);
+
+  --el-border-color: var(--border-light);
+  --el-border-color-light: var(--border-color);
+  --el-border-color-lighter: rgba(0, 0, 0, 0.04);
+  --el-border-color-extra-light: rgba(0, 0, 0, 0.02);
+  --el-border-color-dark: rgba(0, 0, 0, 0.14);
+
+  --el-fill-color: var(--bg-secondary);
+  --el-fill-color-light: var(--bg-card);
+  --el-fill-color-lighter: var(--bg-card-hover);
+  --el-fill-color-blank: transparent;
+
+  --el-color-success: var(--success);
+  --el-color-success-light-3: #3d9689;
+  --el-color-success-light-5: #65b2a7;
+  --el-color-success-light-7: #8eccc5;
+  --el-color-success-light-8: #a5d7d1;
+  --el-color-success-light-9: #bbe2de;
+  --el-color-success-dark-2: #156259;
+
+  --el-color-warning: var(--warning);
+  --el-color-warning-light-3: #edc87b;
+  --el-color-warning-light-5: #f2d89d;
+  --el-color-warning-light-7: #f7e8bf;
+  --el-color-warning-light-8: #faf0d3;
+  --el-color-warning-light-9: #fcf7e8;
+  --el-color-warning-dark-2: #c49a3d;
+
+  --el-color-danger: var(--danger);
+  --el-color-danger-light-3: #dd8770;
+  --el-color-danger-light-5: #e9a392;
+  --el-color-danger-light-7: #f2c3b7;
+  --el-color-danger-light-8: #f6d5cc;
+  --el-color-danger-light-9: #fae7e2;
+  --el-color-danger-dark-2: #b44e35;
+
+  --el-color-info: var(--text-muted);
+  --el-color-info-light-3: #9ea7a4;
+  --el-color-info-light-5: #b7bebc;
+  --el-color-info-light-7: #d1d5d4;
+  --el-color-info-light-8: #dfe2e1;
+  --el-color-info-light-9: #eceeed;
+  --el-color-info-dark-2: #6e7a75;
+
+  --el-disabled-bg-color: var(--bg-secondary);
+  --el-disabled-text-color: rgba(138, 155, 146, 0.3);
+  --el-disabled-border-color: var(--border-color);
+
+  --el-box-shadow: 0 4px 24px var(--shadow-color);
+  --el-box-shadow-light: 0 2px 12px var(--shadow-color);
+  --el-box-shadow-lighter: 0 1px 6px var(--shadow-color);
+  --el-box-shadow-dark: 0 8px 32px rgba(0, 0, 0, 0.12);
+
+  --el-dialog-bg-color: var(--bg-card);
+
+  --el-popover-bg-color: var(--bg-card);
+  --el-popover-border-color: var(--border-light);
+
+  --el-input-bg-color: var(--bg-input);
+  --el-input-border-color: var(--border-light);
+  --el-input-hover-border-color: var(--accent-dim);
+  --el-input-focus-border-color: var(--accent);
+  --el-input-placeholder-color: var(--text-muted);
+  --el-input-text-color: var(--text-primary);
+
+  --el-button-bg-color: var(--bg-card);
+  --el-button-border-color: var(--border-light);
+  --el-button-hover-bg-color: var(--bg-card-hover);
+  --el-button-hover-border-color: var(--accent-dim);
+  --el-button-active-bg-color: var(--bg-secondary);
+  --el-button-text-color: var(--text-primary);
+
+  --el-tag-bg-color: var(--bg-secondary);
+  --el-tag-border-color: var(--border-color);
+  --el-tag-text-color: var(--text-secondary);
+
+  --el-slider-main-bg-color: var(--accent);
+  --el-slider-runway-bg-color: var(--bg-secondary);
+
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: var(--bg-secondary);
+  --el-table-row-hover-bg-color: var(--bg-card-hover);
+  --el-table-border-color: var(--border-color);
+  --el-table-text-color: var(--text-primary);
+  --el-table-header-text-color: var(--text-secondary);
+}
+
+/* ===== Mobile: all dialogs adapt to viewport width ===== */
+@media (max-width: 768px) {
+  .el-dialog {
+    width: 92% !important;
+    max-width: 92vw !important;
+    margin: 12px auto !important;
+    border-radius: var(--radius-lg) !important;
+  }
+
+  .el-dialog__header {
+    padding: 16px 18px 12px !important;
+  }
+
+  .el-dialog__header .el-dialog__title {
+    font-size: 17px;
+  }
+
+  .el-dialog__body {
+    padding: 16px 18px !important;
+    max-height: 60vh;
+    overflow-y: auto;
+  }
+
+  .el-dialog__footer {
+    padding: 12px 18px 16px !important;
+    display: flex;
+    flex-direction: column-reverse;
+    gap: 10px;
+  }
+
+  .el-dialog__footer .el-button {
+    width: 100%;
+    margin-left: 0 !important;
+  }
+
+  /* ElUpload inside dialogs: narrower padding */
+  .el-dialog .el-upload-dragger {
+    padding: 24px 16px;
+  }
+}
+
+/* ===== Tablet: medium dialogs get some breathing room ===== */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .el-dialog {
+    max-width: 88vw !important;
+  }
+}
