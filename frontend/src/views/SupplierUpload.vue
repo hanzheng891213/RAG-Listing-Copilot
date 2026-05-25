@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import type { UploadInstance, UploadRawFile } from 'element-plus'
+import type { UploadInstance, UploadFile, UploadRawFile } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useSupplierStore } from '@/stores/supplierStore'
 import { useFileUpload, UPLOAD_STATUS } from '@/composables/useFileUpload'
@@ -91,9 +91,9 @@ const manualForm = ref({
   specsText: '',
 })
 
-async function handleFileChange(file: UploadRawFile) {
-  handleFileProcess(file)
-  return false
+async function handleFileChange(file: UploadFile) {
+  if (!file.raw) return
+  await handleFileProcess(file.raw)
 }
 
 async function handleFileProcess(file: UploadRawFile) {
@@ -109,10 +109,19 @@ async function handleFileProcess(file: UploadRawFile) {
     store.currentFileName = result.fileName
     store.toggleSelectAll()
     router.push('/listing-generator')
-  } else if (result && result.products.length === 0 && result.errors.length > 0) {
+  } else if (result && result.errors.length > 0) {
     store.parseErrors = result.errors
     store.currentFileName = result.fileName
     result.errors.forEach((e) => ElMessage.warning(`Row ${e.row}: ${e.message}`))
+  } else if (result && result.products.length === 0 && result.errors.length === 0) {
+    showToast({
+      type: 'warning',
+      title: '文件为空',
+      message: `文件 "${result.fileName}" 中未解析到任何商品数据`,
+      icon: 'WarningFilled',
+      autoDismiss: false,
+      duration: 5000,
+    })
   }
 }
 
@@ -165,10 +174,10 @@ function handleManualSubmit() {
         ref="uploadRef"
         class="upload-zone"
         drag
-        :auto-upload="false"
         :accept="FILE_ACCEPT_TYPES"
         :show-file-list="false"
-        :before-upload="handleFileChange"
+        :auto-upload="false"
+        @change="handleFileChange"
       >
         <div class="upload-content">
           <div class="upload-icon">
