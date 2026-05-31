@@ -16,11 +16,28 @@ client.interceptors.request.use((config) => {
     if (apiKey) {
       config.headers['X-DeepSeek-API-Key'] = apiKey
     }
+    const token = localStorage.getItem('rag-copilot-token')
+    if (token) {
+      config.headers['Authorization'] = `Bearer ${token}`
+    }
   } catch {
     // localStorage unavailable
   }
   return config
 })
+
+client.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    // On 401, clear the stored token so the user is prompted to log in again
+    if (error.response?.status === 401) {
+      try {
+        localStorage.removeItem('rag-copilot-token')
+      } catch { /* ignore */ }
+    }
+    return Promise.reject(error)
+  },
+)
 
 client.interceptors.response.use(
   (response) => response.data,

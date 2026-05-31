@@ -21,6 +21,7 @@ export default {
     supplierUpload: 'Supplier Upload',
     listingGenerator: 'Listing Generator',
     knowledgeBase: 'Knowledge Base',
+    adminSettings: 'Admin Settings',
   },
   theme: {
     switchLight: 'Switch to Light',
@@ -189,5 +190,91 @@ export default {
     clear: 'Remove Key',
     cleared: 'API key removed',
     saved: 'API key saved',
+  },
+  user: {
+    login: 'Login',
+    logout: 'Logout',
+    logoutSuccess: 'Logged out',
+    username: 'Email',
+    usernamePlaceholder: 'Enter email',
+    password: 'Password',
+    passwordPlaceholder: 'Enter password',
+    fillAllFields: 'Please fill in all fields',
+    loginSuccess: 'Login successful',
+    loginFailed: 'Login failed',
+    adminRole: 'Admin',
+    userRole: 'Visitor',
+    apiCallsRemaining: 'Remaining API calls',
+    adminSettings: 'Admin Settings',
+  },
+  admin: {
+    title: 'Admin Settings',
+    description: 'Configure model API and system settings. These settings affect all users.',
+    deepseekApiKey: 'DeepSeek API Key',
+    apiKeyPlaceholder: 'Enter new API key (leave empty to keep current)',
+    apiKeyHint: 'Leave empty if you do not want to change the current key.',
+    modelName: 'Model',
+    temperature: 'Temperature',
+    maxTokens: 'Max Tokens',
+    loadFailed: 'Failed to load settings',
+    saveSuccess: 'Settings saved successfully',
+    saveFailed: 'Failed to save settings',
+  },
+  upload: {
+    browserIncompatible: {
+      title: 'Browser Incompatible',
+      message: 'Your current browser does not support drag-and-drop upload. Please use the latest version of a modern browser.',
+    },
+    formatError: {
+      title: 'Format Incompatible',
+      message: 'File format is not supported. Please upload a supported file type.',
+    },
+    fileTooLarge: {
+      title: 'File Too Large',
+      message: 'File size exceeds the limit ({size} > {max}). Please upload a smaller file.',
+    },
+    uploadFailed: {
+      title: 'Upload Failed',
+      message: 'File validation failed. Please try again.',
+    },
+    backendUnavailable: {
+      title: 'Service Unavailable',
+      message: 'Backend service is not running. Cannot complete file upload.',
+    },
+    endpointMissing: {
+      title: 'Upload Endpoint Missing',
+      message: 'Backend does not support file uploads. Please verify the backend deployment or contact the administrator.',
+    },
+    networkError: {
+      title: 'Network Error',
+      message: 'Network connection error. Please check your network and try again.',
+    },
+    uploadTimeout: {
+      title: 'Upload Timeout',
+      message: 'Upload request timed out. Please check your network connection and try again.',
+    },
+    serverError: {
+      title: 'Server Error',
+      message: 'Backend server processing error. Please try again later or contact the administrator.',
+    },
+    payloadTooLarge: {
+      title: 'File Too Large',
+      message: 'File size exceeds the server limit. Please upload a file smaller than {max}.',
+    },
+    badRequest: {
+      title: 'Bad Request',
+      message: 'Upload request parameters are invalid. Please check the file content and try again.',
+    },
+    success: {
+      title: 'Upload Successful',
+      message: 'File "{file}" parsed successfully. {count} products found.',
+    },
+    uploading: 'Uploading...',
+    parsing: 'Parsing...',
+    dropToUpload: 'Drop file to upload',
+  },
+  dropOverlay: {
+    title: 'Drop file to start uploading',
+    hint: 'Supports Excel (.xlsx, .xls), CSV, TXT formats',
   },
 }

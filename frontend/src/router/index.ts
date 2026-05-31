@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import { useAuthStore } from '@/stores/authStore'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -25,11 +26,33 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/KnowledgeBase.vue'),
     meta: { titleKey: 'nav.knowledgeBase', icon: 'Collection' },
   },
+  {
+    path: '/admin',
+    name: 'AdminSettings',
+    component: () => import('@/views/AdminSettings.vue'),
+    meta: { titleKey: 'nav.adminSettings', icon: 'Setting', requiresAuth: true, requiresAdmin: true },
+  },
 ]
 
 const router = createRouter({
   history: createWebHistory(),
   routes,
+})
+
+router.beforeEach((to, _from, next) => {
+  if (to.meta.requiresAuth) {
+    const auth = useAuthStore()
+    if (!auth.isLoggedIn) {
+      auth.openLoginModal()
+      next('/')
+      return
+    }
+    if (to.meta.requiresAdmin && !auth.isAdmin) {
+      next('/')
+      return
+    }
+  }
+  next()
 })
 
 export default router

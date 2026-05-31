@@ -4,37 +4,53 @@ import type { GeneratedListing, Platform, ComplianceResult } from '@/types/listi
 import type { SupplierProduct } from '@/types/supplier'
 import { generateId } from '@/utils/formatters'
 import { generateListing } from '@/api/listing'
+import i18n from '@/locales'
 
 function createDemoListing(rawData: Record<string, string>, platform: Platform): GeneratedListing {
   const label = Object.values(rawData).find((v) => v) || 'Product'
+  const isZh = i18n.global.locale.value === 'zh'
+
   return {
     id: generateId(),
     productId: 'demo',
-    title: `Premium ${label} - High Quality | Fast Shipping | Best Value`,
-    bulletPoints: [
-      `【Premium Quality】Professional-grade ${label} crafted with durable materials for long-lasting performance and reliability.`,
-      `【Versatile Design】Ergonomically designed for everyday use, suitable for home, office, and outdoor activities.`,
-      `【Easy to Use】Simple setup with intuitive controls - no technical expertise required. Get started in minutes.`,
-      `【Perfect Gift Choice】Elegant packaging makes it an ideal present for family, friends, and colleagues on any occasion.`,
-      `【100% Satisfaction Guarantee】Backed by our 30-day money-back guarantee and responsive customer support team.`,
-    ],
-    description: `## Product Description\n\nExperience the perfect blend of quality and value with our ${label}. Designed with attention to detail, this product delivers exceptional performance for all your needs.\n\n### Key Features\n\n- **Superior Build**: Manufactured using premium-grade materials\n- **Modern Design**: Sleek aesthetics that complement any setting\n- **Reliable Performance**: Consistent quality you can count on\n- **Easy Maintenance**: Simple cleaning and care instructions`,
-    keywords: [
-      label.toLowerCase(),
-      'premium quality',
-      'fast shipping',
-      'best value',
-      'professional grade',
-      'durable',
-      'satisfaction guarantee',
-    ],
+    title: isZh
+      ? `优质${label} - 高品质 | 快速发货 | 超值之选`
+      : `Premium ${label} - High Quality | Fast Shipping | Best Value`,
+    bulletPoints: isZh
+      ? [
+          `【优质品质】专业级${label}，采用耐用材料精心打造，性能持久可靠。`,
+          `【多功能设计】人体工学设计，适用于居家、办公和户外活动等多种场景。`,
+          `【简单易用】直观的操作界面，无需专业知识，几分钟即可上手。`,
+          `【完美礼品】精美包装，是送给家人、朋友和同事的理想之选，适合任何场合。`,
+          `【100%满意保证】提供30天无理由退换货保障和专业客服支持团队。`,
+        ]
+      : [
+          `【Premium Quality】Professional-grade ${label} crafted with durable materials for long-lasting performance and reliability.`,
+          `【Versatile Design】Ergonomically designed for everyday use, suitable for home, office, and outdoor activities.`,
+          `【Easy to Use】Simple setup with intuitive controls - no technical expertise required. Get started in minutes.`,
+          `【Perfect Gift Choice】Elegant packaging makes it an ideal present for family, friends, and colleagues on any occasion.`,
+          `【100% Satisfaction Guarantee】Backed by our 30-day money-back guarantee and responsive customer support team.`,
+        ],
+    description: isZh
+      ? `## 产品描述\n\n体验我们的${label}带来的品质与价值的完美融合。这款产品注重细节设计，为您提供卓越的性能体验。\n\n### 核心特点\n\n- **精湛工艺**：采用优质材料制造\n- **时尚设计**：简约美学，百搭各种场景\n- **性能可靠**：始终如一的品质，值得信赖\n- **易于维护**：简单的清洁和保养指南`
+      : `## Product Description\n\nExperience the perfect blend of quality and value with our ${label}. Designed with attention to detail, this product delivers exceptional performance for all your needs.\n\n### Key Features\n\n- **Superior Build**: Manufactured using premium-grade materials\n- **Modern Design**: Sleek aesthetics that complement any setting\n- **Reliable Performance**: Consistent quality you can count on\n- **Easy Maintenance**: Simple cleaning and care instructions`,
+    keywords: isZh
+      ? [label, '优质品质', '快速发货', '超值之选', '专业级', '经久耐用', '满意保证']
+      : [label.toLowerCase(), 'premium quality', 'fast shipping', 'best value', 'professional grade', 'durable', 'satisfaction guarantee'],
     seoScore: 87,
-    complianceResults: [
-      { rule: 'No prohibited claims', passed: true, message: 'No unverified medical or health claims found', severity: 'info' },
-      { rule: 'No restricted keywords', passed: true, message: 'Content passes restricted keyword check', severity: 'info' },
-      { rule: 'Image requirements', passed: true, message: 'Image references meet platform guidelines', severity: 'info' },
-      { rule: 'Price formatting', passed: false, message: 'Consider adding comparative price context for better conversion', severity: 'warning' },
-    ],
+    complianceResults: isZh
+      ? [
+          { rule: '无违规声明', passed: true, message: '未发现未经证实的医疗或健康声明', severity: 'info' as const },
+          { rule: '无受限关键词', passed: true, message: '内容通过受限关键词检查', severity: 'info' as const },
+          { rule: '图片要求', passed: true, message: '图片引用符合平台规范', severity: 'info' as const },
+          { rule: '价格格式', passed: false, message: '建议添加对比价格信息以提高转化率', severity: 'warning' as const },
+        ]
+      : [
+          { rule: 'No prohibited claims', passed: true, message: 'No unverified medical or health claims found', severity: 'info' as const },
+          { rule: 'No restricted keywords', passed: true, message: 'Content passes restricted keyword check', severity: 'info' as const },
+          { rule: 'Image requirements', passed: true, message: 'Image references meet platform guidelines', severity: 'info' as const },
+          { rule: 'Price formatting', passed: false, message: 'Consider adding comparative price context for better conversion', severity: 'warning' as const },
+        ],
     platform,
     template: 'Standard Product Template',
     version: 1,

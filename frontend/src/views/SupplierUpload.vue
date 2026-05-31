@@ -212,7 +212,7 @@ function handleManualSubmit() {
     <div v-if="status === UPLOAD_STATUS.UPLOADING || status === UPLOAD_STATUS.PARSING" class="parsing-overlay">
       <el-icon class="spinner" :size="32"><Loading /></el-icon>
       <div class="uploading-info">
-        <span class="uploading-label">{{ status === UPLOAD_STATUS.UPLOADING ? '上传中...' : '解析中...' }}</span>
+        <span class="uploading-label">{{ status === UPLOAD_STATUS.UPLOADING ? t('upload.uploading') : t('upload.parsing') }}</span>
         <div v-if="status === UPLOAD_STATUS.UPLOADING" class="progress-bar">
           <div class="progress-fill" :style="{ width: progress + '%' }" />
         </div>
@@ -222,7 +222,7 @@ function handleManualSubmit() {
     <div v-if="isDragging" class="drag-overlay">
       <div class="drag-hint">
         <el-icon :size="56"><UploadFilled /></el-icon>
-        <span>释放文件以上传</span>
+        <span>{{ t('upload.dropToUpload') }}</span>
       </div>
     </div>
 

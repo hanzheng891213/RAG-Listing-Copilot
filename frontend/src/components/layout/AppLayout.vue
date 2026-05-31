@@ -3,9 +3,11 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import AppSidebar from './AppSidebar.vue'
 import AppHeader from './AppHeader.vue'
+import { useI18n } from 'vue-i18n'
 import { useSupplierStore } from '@/stores/supplierStore'
 import { FILE_ACCEPT_EXTENSIONS } from '@/utils/constants'
 
+const { t } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const store = useSupplierStore()
@@ -144,8 +146,8 @@ onUnmounted(() => {
             <line x1="12" y1="3" x2="12" y2="15" />
           </svg>
         </div>
-        <h3>释放文件以开始上传</h3>
-        <p>支持 Excel (.xlsx, .xls)、CSV、TXT 格式</p>
+        <h3>{{ t('dropOverlay.title') }}</h3>
+        <p>{{ t('dropOverlay.hint') }}</p>
       </div>
     </div>
   </div>

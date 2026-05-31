@@ -21,6 +21,7 @@ export default {
     supplierUpload: '供应商上传',
     listingGenerator: 'Listing生成器',
     knowledgeBase: '知识库',
+    adminSettings: '管理员设置',
   },
   theme: {
     switchLight: '切换亮色模式',
@@ -186,5 +187,91 @@ export default {
     clear: '移除密钥',
     cleared: 'API 密钥已移除',
     saved: 'API 密钥已保存',
+  },
+  user: {
+    login: '登录',
+    logout: '退出登录',
+    logoutSuccess: '已退出登录',
+    username: '邮箱',
+    usernamePlaceholder: '请输入邮箱',
+    password: '密码',
+    passwordPlaceholder: '请输入密码',
+    fillAllFields: '请填写所有字段',
+    loginSuccess: '登录成功',
+    loginFailed: '登录失败',
+    adminRole: '管理员',
+    userRole: '访客',
+    apiCallsRemaining: '剩余API调用次数',
+    adminSettings: '管理员设置',
+  },
+  admin: {
+    title: '管理员设置',
+    description: '配置模型API和系统设置。这些设置将影响所有用户。',
+    deepseekApiKey: 'DeepSeek API 密钥',
+    apiKeyPlaceholder: '输入新的 API 密钥（留空保持不变）',
+    apiKeyHint: '如果不想修改当前密钥，请留空。',
+    modelName: '模型',
+    temperature: '温度参数',
+    maxTokens: '最大Token数',
+    loadFailed: '加载设置失败',
+    saveSuccess: '设置保存成功',
+    saveFailed: '设置保存失败',
+  },
+  upload: {
+    browserIncompatible: {
+      title: '浏览器不兼容',
+      message: '当前浏览器不支持拖放上传功能，请使用最新版浏览器',
+    },
+    formatError: {
+      title: '格式不兼容',
+      message: '文件格式不兼容，请上传支持的文件类型',
+    },
+    fileTooLarge: {
+      title: '文件过大',
+      message: '文件大小超过限制（{size} > {max}），请上传更小的文件',
+    },
+    uploadFailed: {
+      title: '上传失败',
+      message: '文件验证失败，请重试',
+    },
+    backendUnavailable: {
+      title: '服务不可用',
+      message: '后台无服务，无法完成文件上传',
+    },
+    endpointMissing: {
+      title: '上传接口缺失',
+      message: '后端服务不支持文件上传功能，请检查后端是否正确部署或联系管理员',
+    },
+    networkError: {
+      title: '网络异常',
+      message: '网络连接异常，请检查网络后重试',
+    },
+    uploadTimeout: {
+      title: '上传超时',
+      message: '上传请求超时，请检查网络连接后重试',
+    },
+    serverError: {
+      title: '服务器错误',
+      message: '后端服务器处理异常，请稍后重试或联系管理员',
+    },
+    payloadTooLarge: {
+      title: '文件过大',
+      message: '文件大小超过服务器限制，请上传小于 {max} 的文件',
+    },
+    badRequest: {
+      title: '请求错误',
+      message: '上传请求参数有误，请检查文件内容后重试',
+    },
+    success: {
+      title: '上传成功',
+      message: '文件 "{file}" 解析完成，共 {count} 个商品',
+    },
+    uploading: '上传中...',
+    parsing: '解析中...',
+    dropToUpload: '释放文件以上传',
+  },
+  dropOverlay: {
+    title: '释放文件以开始上传',
+    hint: '支持 Excel (.xlsx, .xls)、CSV、TXT 格式',
   },
 }

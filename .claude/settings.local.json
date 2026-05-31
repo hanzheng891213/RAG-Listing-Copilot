@@ -7,7 +7,20 @@
       "Bash(npx vite *)",
       "Bash(timeout 5 npx tsx src/server.ts)",
       "Bash(npx tsc *)",
-      "Bash(./node_modules/.bin/vue-tsc *)"
+      "Bash(./node_modules/.bin/vue-tsc *)",
+      "Bash(curl -s http://localhost:5175)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5175)",
+      "Bash(npx tsx *)",
+      "Bash(curl -s -X POST http://localhost:3001/api/auth/login -H \"Content-Type: application/json\" -d '{\"username\":\"admin\",\"password\":\"admin123\"}')",
+      "Bash(curl -s -X POST http://localhost:3001/api/auth/register -H \"Content-Type: application/json\" -d '{\"username\":\"testuser\",\"password\":\"test123\"}')",
+      "Bash(curl -s -X POST http://localhost:3001/api/auth/login -H \"Content-Type: application/json\" -d '{\"username\":\"testuser\",\"password\":\"test123\"}')",
+      "Bash(powershell.exe -Command \"Get-Process -Name node -ErrorAction SilentlyContinue | Stop-Process -Force\")",
+      "Bash(node -e ' *)",
+      "Bash(curl -s -X POST http://localhost:3001/api/auth/login -H \"Content-Type: application/json\" -d '{\"username\":\"hanzheng891213@gmail.com\",\"password\":\"handsandblog@110\"}')",
+      "Bash(curl -s -X POST http://localhost:3001/api/auth/login -H \"Content-Type: application/json\" -d '{\"username\":\"O_O@visitor.com\",\"password\":\"123@456vst\"}')",
+      "Bash(curl -s -X POST http://localhost:3001/api/auth/login -H \"Content-Type: application/json\" -d '{\"username\":\"wrong@email.com\",\"password\":\"wrong\"}')",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\" -X POST http://localhost:3001/api/auth/register -H \"Content-Type: application/json\" -d '{\"username\":\"new@user.com\",\"password\":\"test123\"}')",
+      "Bash(kill %1)"
     ]
   }
 }

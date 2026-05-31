@@ -1,17 +1,20 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { setLocale } from '@/locales'
 import { useAuthStore } from '@/stores/authStore'
+import { useKnowledgeStore } from '@/stores/knowledgeStore'
 
 defineEmits<{ toggleSidebar: [] }>()
 
 const { t, locale } = useI18n()
 const route = useRoute()
+const router = useRouter()
 const isDark = ref(true)
 const auth = useAuthStore()
+const knowledge = useKnowledgeStore()
 
 watch(isDark, (val) => {
   document.documentElement.classList.toggle('light', !val)
@@ -19,6 +22,7 @@ watch(isDark, (val) => {
 
 function toggleLang() {
   setLocale(locale.value === 'zh' ? 'en' : 'zh')
+  knowledge.refreshLocale()
 }
 
 function handleClearKey() {
@@ -26,6 +30,15 @@ function handleClearKey() {
   ElMessage.success(t('auth.cleared'))
 }
 
+function handleLogout() {
+  auth.logout()
+  ElMessage.success(t('user.logoutSuccess'))
+  router.push('/')
+}
+
+function goAdmin() {
+  router.push('/admin')
+}
 </script>
 
 <template>
@@ -60,42 +73,48 @@ function handleClearKey() {
         </el-icon>
       </button>
 
-      <el-dropdown trigger="click">
+      <!-- User / Login area -->
+      <template v-if="auth.isLoggedIn">
+        <el-dropdown trigger="click">
+          <button class="avatar-btn" :class="{ admin: auth.isAdmin }">
+            <el-icon :size="20"><UserFilled /></el-icon>
+          </button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item disabled>
+                <div class="user-info">
+                  <span class="user-name">{{ auth.user?.username }}</span>
+                  <span class="user-role" :class="auth.user?.role">
+                    {{ auth.isAdmin ? t('user.adminRole') : t('user.userRole') }}
+                  </span>
+                </div>
+              </el-dropdown-item>
+              <el-dropdown-item v-if="!auth.isAdmin" disabled>
+                <span class="usage-text">
+                  {{ t('user.apiCallsRemaining') }}: {{ auth.apiCallsRemaining }}
+                </span>
+              </el-dropdown-item>
+              <el-dropdown-item divided v-if="auth.isAdmin" @click="goAdmin">
+                <el-icon><Setting /></el-icon>
+                {{ t('user.adminSettings') }}
+              </el-dropdown-item>
+              <el-dropdown-item divided @click="handleLogout">
+                <el-icon><SwitchButton /></el-icon>
+                {{ t('user.logout') }}
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+      </template>
+      <template v-else>
         <button
-          class="api-key-indicator"
-          :class="{ configured: auth.isConfigured }"
-          :title="auth.isConfigured ? t('auth.configured') : t('auth.notConfigured')"
+          class="avatar-btn"
+          :title="t('user.login')"
+          @click="auth.openLoginModal"
         >
-          <el-icon><Key /></el-icon>
-          <span class="api-dot" :class="{ active: auth.isConfigured }" />
+          <el-icon :size="20"><UserFilled /></el-icon>
         </button>
-        <template #dropdown>
-          <el-dropdown-menu>
-            <template v-if="auth.isConfigured">
-              <el-dropdown-item disabled>
-                <span class="key-display">{{ auth.maskedKey }}</span>
-              </el-dropdown-item>
-              <el-dropdown-item divided @click="auth.showModal = true">
-                <el-icon><Edit /></el-icon>
-                {{ t('auth.manage') }}
-              </el-dropdown-item>
-              <el-dropdown-item @click="handleClearKey">
-                <el-icon><Delete /></el-icon>
-                {{ t('auth.clear') }}
-              </el-dropdown-item>
-            </template>
-            <template v-else>
-              <el-dropdown-item disabled>
-                {{ t('auth.notConfigured') }}
-              </el-dropdown-item>
-              <el-dropdown-item divided @click="auth.showModal = true">
-                <el-icon><Key /></el-icon>
-                {{ t('auth.confirm') }}
-              </el-dropdown-item>
-            </template>
-          </el-dropdown-menu>
-        </template>
-      </el-dropdown>
+      </template>
     </div>
   </header>
 </template>
@@ -199,51 +218,63 @@ function handleClearKey() {
   box-shadow: 0 0 12px var(--accent-glow);
 }
 
-.api-key-indicator {
-  position: relative;
+/* Avatar / User button */
+.avatar-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 36px;
   height: 36px;
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
+  border-radius: 50%;
   background: transparent;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   cursor: pointer;
   transition: all var(--transition-fast);
-  font-size: 16px;
 }
 
-.api-key-indicator:hover {
-  border-color: var(--accent-dim);
+.avatar-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+
+.avatar-btn.admin {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 140px;
+}
+
+.user-name {
+  font-size: 14px;
+  font-weight: 600;
   color: var(--text-primary);
 }
 
-.api-key-indicator.configured {
+.user-role {
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+.user-role.admin {
+  background: var(--accent-glow);
   color: var(--accent);
-  border-color: var(--accent-dim);
 }
 
-.api-dot {
-  position: absolute;
-  top: -3px;
-  right: -3px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--text-muted);
-  border: 2px solid var(--bg-secondary);
-  transition: background var(--transition-fast);
+.user-role.user {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
 }
 
-.api-dot.active {
-  background: var(--accent);
-  box-shadow: 0 0 6px var(--accent-glow-strong);
-}
-
-.key-display {
-  font-family: var(--font-mono);
+.usage-text {
   font-size: 12px;
   color: var(--text-muted);
 }

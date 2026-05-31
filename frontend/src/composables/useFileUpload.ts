@@ -2,6 +2,9 @@ import { ref } from 'vue'
 import axios from 'axios'
 import type { SupplierProduct, ParseResult, ParseError } from '@/types/supplier'
 import { uploadSupplier } from '@/api/supplier'
+import i18n from '@/locales'
+
+const t = i18n.global.t
 
 export const UPLOAD_STATUS = {
   IDLE: 'idle',
@@ -90,8 +93,8 @@ export function useFileUpload() {
     if (typeof FileReader === 'undefined' || typeof FormData === 'undefined') {
       showFeedback({
         type: 'error',
-        title: '浏览器不兼容',
-        message: '当前浏览器不支持拖放上传功能，请使用最新版浏览器',
+        title: t('upload.browserIncompatible.title'),
+        message: t('upload.browserIncompatible.message'),
         icon: 'WarningFilled',
         autoDismiss: false,
       })
@@ -116,24 +119,24 @@ export function useFileUpload() {
       case 'format':
         return {
           type: 'error',
-          title: '格式不兼容',
-          message: '文件格式不兼容，请上传支持的文件类型',
+          title: t('upload.formatError.title'),
+          message: t('upload.formatError.message'),
           icon: 'DocumentDelete',
           autoDismiss: false,
         }
       case 'size':
         return {
           type: 'error',
-          title: '文件过大',
-          message: `文件大小超过限制（${formatSize(file.size)} > ${formatSize(MAX_FILE_SIZE)}），请上传更小的文件`,
+          title: t('upload.fileTooLarge.title'),
+          message: t('upload.fileTooLarge.message', { size: formatSize(file.size), max: formatSize(MAX_FILE_SIZE) }),
           icon: 'WarningFilled',
           autoDismiss: false,
         }
       default:
         return {
           type: 'error',
-          title: '上传失败',
-          message: '文件验证失败，请重试',
+          title: t('upload.uploadFailed.title'),
+          message: t('upload.uploadFailed.message'),
           icon: 'CircleCloseFilled',
           autoDismiss: false,
         }
@@ -145,8 +148,8 @@ export function useFileUpload() {
       if (error.code === 'ECONNREFUSED') {
         return {
           type: 'error',
-          title: '后端未启动',
-          message: '无法连接到后端服务，请在终端执行 npm run dev 启动后端后再试',
+          title: t('upload.backendUnavailable.title'),
+          message: t('upload.backendUnavailable.message'),
           icon: 'MonitorOff',
           autoDismiss: false,
         }
@@ -156,16 +159,16 @@ export function useFileUpload() {
         if (error.message?.includes('timeout')) {
           return {
             type: 'error',
-            title: '上传超时',
-            message: '上传请求超时，请检查网络连接后重试',
+            title: t('upload.uploadTimeout.title'),
+            message: t('upload.uploadTimeout.message'),
             icon: 'Clock',
             autoDismiss: false,
           }
         }
         return {
           type: 'error',
-          title: '网络异常',
-          message: '网络连接异常，请检查网络后重试',
+          title: t('upload.networkError.title'),
+          message: t('upload.networkError.message'),
           icon: 'WifiOff',
           autoDismiss: false,
         }
@@ -174,8 +177,8 @@ export function useFileUpload() {
       if (error.response?.status === 404) {
         return {
           type: 'error',
-          title: '上传接口缺失',
-          message: '后端服务不支持文件上传功能，请检查后端是否正确部署或联系管理员',
+          title: t('upload.endpointMissing.title'),
+          message: t('upload.endpointMissing.message'),
           icon: 'Link',
           autoDismiss: false,
         }
@@ -184,8 +187,8 @@ export function useFileUpload() {
       if (error.response?.status === 500 || error.response?.status === 502 || error.response?.status === 503) {
         return {
           type: 'error',
-          title: '服务器错误',
-          message: '后端服务器处理异常，请稍后重试或联系管理员',
+          title: t('upload.serverError.title'),
+          message: t('upload.serverError.message'),
           icon: 'WarningFilled',
           autoDismiss: false,
         }
@@ -194,8 +197,8 @@ export function useFileUpload() {
       if (error.response?.status === 413) {
         return {
           type: 'error',
-          title: '文件过大',
-          message: `文件大小超过服务器限制，请上传小于 ${formatSize(MAX_FILE_SIZE)} 的文件`,
+          title: t('upload.payloadTooLarge.title'),
+          message: t('upload.payloadTooLarge.message', { max: formatSize(MAX_FILE_SIZE) }),
           icon: 'WarningFilled',
           autoDismiss: false,
         }
@@ -205,24 +208,24 @@ export function useFileUpload() {
         if (serverMsg.toLowerCase().includes('unsupported') || serverMsg.toLowerCase().includes('format')) {
           return {
             type: 'error',
-            title: '格式不兼容',
-            message: '文件格式不兼容，请上传支持的文件类型',
+            title: t('upload.formatError.title'),
+            message: t('upload.formatError.message'),
             icon: 'DocumentDelete',
             autoDismiss: false,
           }
         }
         return {
           type: 'error',
-          title: '请求错误',
-          message: serverMsg || '上传请求参数有误，请检查文件内容后重试',
+          title: t('upload.badRequest.title'),
+          message: serverMsg || t('upload.badRequest.message'),
           icon: 'WarningFilled',
           autoDismiss: false,
         }
       }
       return {
         type: 'error',
-        title: '上传失败',
-        message: error.response?.data?.error || error.message || '服务器处理失败，请稍后重试',
+        title: t('upload.uploadFailed.title'),
+        message: error.response?.data?.error || error.message || t('upload.uploadFailed.message'),
         icon: 'CircleCloseFilled',
         autoDismiss: false,
       }
@@ -231,8 +234,8 @@ export function useFileUpload() {
     if (error instanceof Error) {
       return {
         type: 'error',
-        title: '上传失败',
-        message: error.message || '发生未知错误，请重试',
+        title: t('upload.uploadFailed.title'),
+        message: error.message || t('upload.uploadFailed.message'),
         icon: 'CircleCloseFilled',
         autoDismiss: false,
       }
@@ -240,8 +243,8 @@ export function useFileUpload() {
 
     return {
       type: 'error',
-      title: '上传失败',
-      message: '发生未知错误，请重试',
+      title: t('upload.uploadFailed.title'),
+      message: t('upload.uploadFailed.message'),
       icon: 'CircleCloseFilled',
       autoDismiss: false,
     }
@@ -304,8 +307,8 @@ export function useFileUpload() {
       status.value = UPLOAD_STATUS.ERROR
       showFeedback({
         type: 'error',
-        title: '服务不可用',
-        message: '后台无服务，无法完成文件上传',
+        title: t('upload.backendUnavailable.title'),
+        message: t('upload.backendUnavailable.message'),
         icon: 'MonitorOff',
         autoDismiss: false,
       })
@@ -318,8 +321,8 @@ export function useFileUpload() {
       status.value = UPLOAD_STATUS.ERROR
       showFeedback({
         type: 'error',
-        title: '上传接口缺失',
-        message: '后端服务不支持文件上传功能，请检查后端是否正确部署或联系管理员',
+        title: t('upload.endpointMissing.title'),
+        message: t('upload.endpointMissing.message'),
         icon: 'Link',
         autoDismiss: false,
       })
@@ -354,8 +357,8 @@ export function useFileUpload() {
       status.value = UPLOAD_STATUS.SUCCESS
       showFeedback({
         type: 'success',
-        title: '上传成功',
-        message: `文件 "${file.name}" 解析完成，共 ${result.products.length} 个商品`,
+        title: t('upload.success.title'),
+        message: t('upload.success.message', { file: file.name, count: result.products.length }),
         icon: 'CircleCheckFilled',
         autoDismiss: true,
       })
