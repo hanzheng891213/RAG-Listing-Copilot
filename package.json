@@ -3,6 +3,11 @@
   "private": true,
   "scripts": {
     "postinstall": "cd frontend && npm ci",
-    "build": "cd frontend && npm run build"
+    "build": "cd frontend && npm run build",
+    "deploy": "wrangler deploy",
+    "preview": "wrangler dev"
+  },
+  "devDependencies": {
+    "wrangler": "^4.96.0"
   }
 }

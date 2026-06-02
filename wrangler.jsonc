@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "rag-listing-copilot",
+  "compatibility_date": "2026-06-02",
+  "observability": {
+    "enabled": true
+  },
+  "assets": {
+    "directory": "frontend"
+  },
+  "compatibility_flags": [
+    "nodejs_compat"
+  ]
+}
