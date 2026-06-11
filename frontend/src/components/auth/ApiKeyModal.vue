@@ -16,13 +16,13 @@ function submit() {
 }
 
 function skip() {
-  auth.cancelAuth()
+  auth.cancelApiKey()
 }
 </script>
 
 <template>
   <el-dialog
-    :model-value="auth.showModal"
+    :model-value="auth.showApiKeyModal"
     :title="t('auth.title')"
     width="480px"
     :close-on-click-modal="false"

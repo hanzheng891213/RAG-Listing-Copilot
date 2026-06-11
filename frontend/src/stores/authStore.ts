@@ -37,7 +37,7 @@ function persistToken(token: string) {
     if (token) {
       localStorage.setItem(TOKEN_STORAGE, token)
     } else {
-      localStorage.removeItem(TOKEN_STORAGE, token)
+      localStorage.removeItem(TOKEN_STORAGE)
     }
   } catch { /* storage unavailable */ }
 }

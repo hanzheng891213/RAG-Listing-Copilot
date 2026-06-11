@@ -1,0 +1,3 @@
+name = "rag-listing-copilot"
+compatibility_date = "2025-06-11"
+assets = { directory = "./frontend/dist" }

@@ -35,6 +35,7 @@ export interface UploadFeedback {
   message: string
   icon: string
   autoDismiss: boolean
+  duration?: number
 }
 
 const ALLOWED_EXTENSIONS = ['.csv', '.xlsx', '.xls', '.txt']

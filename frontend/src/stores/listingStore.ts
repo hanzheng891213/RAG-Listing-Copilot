@@ -84,7 +84,7 @@ export const useListingStore = defineStore('listing', () => {
         template: selectedTemplate.value,
         productData: product,
       })
-      addListing(listing)
+      addListing(listing.data)
     } catch (_e) {
       // Fallback to demo mode when backend is unavailable
       const listing = createDemoListing(product.rawData, selectedPlatform.value)

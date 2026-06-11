@@ -49,7 +49,8 @@ export function useSupplierParser() {
     }
 
     const headers = lines[0].split(',').map((h) => h.trim())
-    return linesToProducts(headers, lines.slice(1), errors)
+    const rows = lines.slice(1).map((line) => line.split(',').map((v) => v.trim()))
+    return linesToProducts(headers, rows, errors)
   }
 
   async function parseExcel(file: File, errors: ParseError[]): Promise<SupplierProduct[]> {
