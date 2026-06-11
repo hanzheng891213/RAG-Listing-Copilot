@@ -2,7 +2,7 @@
   "name": "RAG-Listing-Copilot",
   "private": true,
   "scripts": {
-    "postinstall": "cd frontend && npm ci",
+    "postinstall": "cd frontend && npm ci && npm run build",
     "build": "cd frontend && npm run build",
     "deploy": "npm run build && wrangler deploy",
     "preview": "wrangler dev"
