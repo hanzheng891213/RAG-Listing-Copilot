@@ -24,7 +24,12 @@
       "Bash(git add *)",
       "Bash(git --no-pager ls-files --stage wrangler.toml)",
       "Bash(git --no-pager diff --staged -- wrangler.toml)",
-      "Bash(git --no-pager diff --staged package.json)"
+      "Bash(git --no-pager diff --staged package.json)",
+      "Bash(git --no-pager show 6e9d50c --stat)",
+      "Bash(git --no-pager log --oneline -10)",
+      "Bash(git --no-pager ls-tree HEAD -- frontend/package-lock.json)",
+      "Bash(npm run *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }
