@@ -20,7 +20,11 @@
       "Bash(curl -s -X POST http://localhost:3001/api/auth/login -H \"Content-Type: application/json\" -d '{\"username\":\"O_O@visitor.com\",\"password\":\"123@456vst\"}')",
       "Bash(curl -s -X POST http://localhost:3001/api/auth/login -H \"Content-Type: application/json\" -d '{\"username\":\"wrong@email.com\",\"password\":\"wrong\"}')",
       "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\" -X POST http://localhost:3001/api/auth/register -H \"Content-Type: application/json\" -d '{\"username\":\"new@user.com\",\"password\":\"test123\"}')",
-      "Bash(kill %1)"
+      "Bash(kill %1)",
+      "Bash(git add *)",
+      "Bash(git --no-pager ls-files --stage wrangler.toml)",
+      "Bash(git --no-pager diff --staged -- wrangler.toml)",
+      "Bash(git --no-pager diff --staged package.json)"
     ]
   }
 }

@@ -5,4 +5,10 @@ dist/
 .DS_Store
 Thumbs.db
 .env
-2.claude/
+.claude/
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+!.env.example
