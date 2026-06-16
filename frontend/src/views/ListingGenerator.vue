@@ -4,7 +4,6 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useListingGenerator } from '@/composables/useListingGenerator'
 import { useSupplierStore } from '@/stores/supplierStore'
-import { useAuthStore } from '@/stores/authStore'
 import { useModelStore } from '@/stores/modelStore'
 import ListingPreview from '@/components/listing/ListingPreview.vue'
 import CompliancePanel from '@/components/listing/CompliancePanel.vue'
@@ -19,7 +18,6 @@ const { t } = useI18n()
 const router = useRouter()
 const { store, handleGenerate, handleRegenerate, handleExport, platforms } = useListingGenerator()
 const supplierStore = useSupplierStore()
-const auth = useAuthStore()
 const modelStore = useModelStore()
 
 // 流式状态文字轮播（每2.5s切换）
@@ -44,7 +42,7 @@ onMounted(() => {
 })
 
 function onGenerate(product: SupplierProduct, language: string) {
-  if (auth.isAdmin && !modelStore.hasAnyConfigured) {
+  if (!modelStore.hasAnyConfigured) {
     router.push('/model-manager')
     return
   }
@@ -52,7 +50,7 @@ function onGenerate(product: SupplierProduct, language: string) {
 }
 
 function onRegenerate() {
-  if (auth.isAdmin && !modelStore.hasAnyConfigured) {
+  if (!modelStore.hasAnyConfigured) {
     router.push('/model-manager')
     return
   }
@@ -88,7 +86,7 @@ function onRegenerate() {
       <div class="content-area">
         <div class="listing-area">
           <!-- No model configured warning -->
-          <div v-if="auth.isAdmin && !modelStore.hasAnyConfigured && supplierStore.hasProducts" class="no-model-banner">
+          <div v-if="!modelStore.hasAnyConfigured && supplierStore.hasProducts" class="no-model-banner">
             <el-icon><WarningFilled /></el-icon>
             <span>{{ t('listing.noModelForGenerate') }}</span>
             <el-button size="small" type="primary" @click="router.push('/model-manager')">
@@ -140,7 +138,7 @@ function onRegenerate() {
 
       <!-- Right 1/4: Chat Panel (Trae style) -->
       <div class="chat-area">
-        <div v-if="auth.isAdmin" class="chat-model-bar">
+        <div class="chat-model-bar">
           <el-dropdown
             v-if="modelStore.configuredProviders.length > 0"
             trigger="click"
@@ -166,7 +164,7 @@ function onRegenerate() {
             </template>
           </el-dropdown>
         </div>
-        <ChatPanel v-if="auth.isAdmin" />
+        <ChatPanel />
       </div>
     </div>
   </div>
@@ -361,7 +359,7 @@ function onRegenerate() {
   height: 48px;
   border-radius: 50%;
   background: var(--accent-glow);
-  animation: glow-pulse 2s ease-in-out infinite;
+  animation: heartbeat 1.4s ease-in-out infinite;
 }
 
 .generating-state h3 {

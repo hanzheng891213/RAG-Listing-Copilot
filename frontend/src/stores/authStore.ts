@@ -4,6 +4,7 @@ import type { UserInfo } from '@/api/auth'
 import { login as loginApi, fetchMe } from '@/api/auth'
 
 const TOKEN_STORAGE = 'rag-copilot-token'
+const REGISTERED_USERS_KEY = 'rag-copilot-registered-users'
 
 function loadToken(): string {
   try {
@@ -23,6 +24,21 @@ function persistToken(token: string) {
   } catch { /* storage unavailable */ }
 }
 
+function loadRegisteredUsers(): Record<string, { password: string; user: UserInfo }> {
+  try {
+    const data = localStorage.getItem(REGISTERED_USERS_KEY)
+    return data ? JSON.parse(data) : {}
+  } catch {
+    return {}
+  }
+}
+
+function persistRegisteredUsers(users: Record<string, { password: string; user: UserInfo }>) {
+  try {
+    localStorage.setItem(REGISTERED_USERS_KEY, JSON.stringify(users))
+  } catch { /* storage unavailable */ }
+}
+
 export const useAuthStore = defineStore('auth', () => {
   // --- User auth state ---
   const token = ref(loadToken())
@@ -32,11 +48,6 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isLoggedIn = computed(() => !!token.value && !!user.value)
   const isAdmin = computed(() => user.value?.role === 'admin')
-  const apiCallsRemaining = computed(() => {
-    if (!user.value) return 0
-    if (user.value.role === 'admin') return Infinity
-    return Math.max(0, 3 - user.value.apiCallCount)
-  })
 
   function setToken(newToken: string) {
     token.value = newToken
@@ -55,6 +66,29 @@ export const useAuthStore = defineStore('auth', () => {
     },
   }
 
+  /** 注册新用户，信息仅存储在客户端 localStorage */
+  function register(username: string, password: string): boolean {
+    const registered = loadRegisteredUsers()
+    if (registered[username]) {
+      return false // 用户名已存在
+    }
+    const newUser: UserInfo = {
+      id: 'user-' + Date.now(),
+      username,
+      role: 'user',
+      apiCallCount: 0,
+      createdAt: new Date().toISOString(),
+    }
+    registered[username] = { password, user: newUser }
+    persistRegisteredUsers(registered)
+
+    // 注册后自动登录
+    setToken('local-jwt-' + newUser.id)
+    user.value = newUser
+    showLoginModal.value = false
+    return true
+  }
+
   async function login(username: string, password: string) {
     authLoading.value = true
     try {
@@ -70,7 +104,16 @@ export const useAuthStore = defineStore('auth', () => {
         user.value = mock.user
         showLoginModal.value = false
       } else {
-        throw e
+        // Fallback to registered users in localStorage
+        const registered = loadRegisteredUsers()
+        const regUser = registered[username]
+        if (regUser && regUser.password === password) {
+          setToken('local-jwt-' + regUser.user.id)
+          user.value = regUser.user
+          showLoginModal.value = false
+        } else {
+          throw e
+        }
       }
     } finally {
       authLoading.value = false
@@ -113,7 +156,7 @@ export const useAuthStore = defineStore('auth', () => {
     authLoading,
     isLoggedIn,
     isAdmin,
-    apiCallsRemaining,
+    register,
     login,
     refreshUser,
     logout,

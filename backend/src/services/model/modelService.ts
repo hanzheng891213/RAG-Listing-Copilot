@@ -195,6 +195,7 @@ class ModelService {
 
     const decoder = new TextDecoder()
     let buffer = ''
+    let streamUsage: { prompt_tokens: number; completion_tokens: number } | null = null
 
     try {
       while (true) {
@@ -215,6 +216,13 @@ class ModelService {
             const parsed = JSON.parse(data)
             const content = parsed.choices?.[0]?.delta?.content || ''
             if (content) yield content
+            // capture usage from final streaming chunk (OpenAI-compatible APIs)
+            if (parsed.usage) {
+              streamUsage = {
+                prompt_tokens: parsed.usage.prompt_tokens || 0,
+                completion_tokens: parsed.usage.completion_tokens || 0,
+              }
+            }
           } catch {
             // skip unparseable chunks
           }
@@ -222,6 +230,9 @@ class ModelService {
       }
     } finally {
       reader.releaseLock()
+      if (streamUsage) {
+        this.recordUsage(providerId, options?.model || '', streamUsage.prompt_tokens, streamUsage.completion_tokens)
+      }
     }
   }
 

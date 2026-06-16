@@ -4,7 +4,6 @@ import type { GeneratedListing, Platform, ComplianceResult } from '@/types/listi
 import type { SupplierProduct } from '@/types/supplier'
 import { generateId } from '@/utils/formatters'
 import { generateListing, generateListingStream } from '@/api/listing'
-import { useAuthStore } from '@/stores/authStore'
 import { useModelStore } from '@/stores/modelStore'
 import i18n from '@/locales'
 
@@ -114,7 +113,6 @@ export const useListingStore = defineStore('listing', () => {
     versionHistory.value = []
     receivedFields.value = new Set()
 
-    const auth = useAuthStore()
     const modelStore = useModelStore()
     const activeProvider = modelStore.activeConfig?.providerId
 
@@ -122,17 +120,7 @@ export const useListingStore = defineStore('listing', () => {
     if (language) selectedLanguage.value = language
     generationError.value = ''
 
-    // Visitors always get demo data
-    if (!auth.isAdmin) {
-      isGenerating.value = true
-      console.log('[Generate] Visitor — using demo mode')
-      generationError.value = i18n.global.t('listing.demoMode')
-      const listing = createDemoListing(product.rawData, selectedPlatform.value)
-      addListing(listing)
-      return
-    }
-
-    // Use streaming for admin users
+    // Use streaming for all users
     isStreaming.value = true
     isGenerating.value = true
 

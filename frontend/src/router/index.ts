@@ -1,5 +1,4 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
-import { useAuthStore } from '@/stores/authStore'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -30,25 +29,13 @@ const routes: RouteRecordRaw[] = [
     path: '/model-manager',
     name: 'ModelManager',
     component: () => import('@/views/ModelManager.vue'),
-    meta: { titleKey: 'nav.modelManager', icon: 'Cpu', requiresAuth: true },
+    meta: { titleKey: 'nav.modelManager', icon: 'Cpu' },
   },
 ]
 
 const router = createRouter({
   history: createWebHistory(),
   routes,
-})
-
-router.beforeEach((to, _from, next) => {
-  if (to.meta.requiresAuth) {
-    const auth = useAuthStore()
-    if (!auth.isLoggedIn) {
-      auth.openLoginModal()
-      next('/')
-      return
-    }
-  }
-  next()
 })
 
 export default router

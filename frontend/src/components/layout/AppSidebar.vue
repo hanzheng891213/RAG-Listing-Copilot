@@ -1,8 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { useAuthStore } from '@/stores/authStore'
 
 const props = defineProps<{ collapsed: boolean; mobileOpen: boolean }>()
 const emit = defineEmits<{ toggle: []; nav: [] }>()
@@ -10,19 +8,14 @@ const emit = defineEmits<{ toggle: []; nav: [] }>()
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
-const auth = useAuthStore()
 
-const allNavItems = [
+const navItems = [
   { path: '/', labelKey: 'nav.home', icon: 'HomeFilled' },
   { path: '/supplier-upload', labelKey: 'nav.supplierUpload', icon: 'Upload' },
   { path: '/listing-generator', labelKey: 'nav.listingGenerator', icon: 'MagicStick' },
   { path: '/knowledge-base', labelKey: 'nav.knowledgeBase', icon: 'Collection' },
-  { path: '/model-manager', labelKey: 'nav.modelManager', icon: 'Cpu', adminOnly: true },
+  { path: '/model-manager', labelKey: 'nav.modelManager', icon: 'Cpu' },
 ]
-
-const navItems = computed(() =>
-  allNavItems.filter((item) => !item.adminOnly || auth.isAdmin)
-)
 
 function isActive(path: string) {
   if (path === '/') return route.path === '/'

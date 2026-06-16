@@ -94,11 +94,6 @@ function goModelManager() {
                   </span>
                 </div>
               </el-dropdown-item>
-              <el-dropdown-item v-if="!auth.isAdmin" disabled>
-                <span class="usage-text">
-                  {{ t('user.apiCallsRemaining') }}: {{ auth.apiCallsRemaining }}
-                </span>
-              </el-dropdown-item>
               <el-dropdown-item v-if="auth.isAdmin" @click="goModelManager">
                 <el-icon><Cpu /></el-icon>
                 {{ t('nav.modelManager') }}
@@ -112,6 +107,14 @@ function goModelManager() {
         </el-dropdown>
       </template>
       <template v-else>
+        <button
+          class="avatar-btn register-btn"
+          :title="t('user.register')"
+          @click="auth.openLoginModal"
+        >
+          <el-icon :size="18"><UserPlus /></el-icon>
+          <span class="register-text">{{ t('user.register') }}</span>
+        </button>
         <button
           class="avatar-btn"
           :title="t('user.login')"
@@ -247,6 +250,20 @@ function goModelManager() {
 .avatar-btn.admin {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.avatar-btn.register-btn {
+  width: auto;
+  border-radius: var(--radius-md);
+  padding: 0 12px;
+  gap: 6px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.register-text {
+  white-space: nowrap;
 }
 
 .user-info {
