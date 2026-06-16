@@ -1,0 +1,7 @@
+fix: run build in postinstall to ensure dist exists before deploy
+
+Cloudflare Pages CI skips the build step when dashboard Build command
+is not configured. Moving `vite build` into postinstall ensures
+frontend/dist is generated during dependency installation.
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
