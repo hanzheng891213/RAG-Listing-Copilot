@@ -21,8 +21,8 @@ export class ParserService {
     return { products: this.linesToProducts(headers, rows), errors }
   }
 
-  parseExcel(buffer: Buffer): { products: SupplierProduct[]; errors: ParseError[] } {
-    const workbook = XLSX.read(buffer, { type: 'buffer' })
+  parseExcel(data: ArrayBuffer | Buffer): { products: SupplierProduct[]; errors: ParseError[] } {
+    const workbook = XLSX.read(data, { type: 'array' })
     const allProducts: SupplierProduct[] = []
     const allErrors: ParseError[] = []
 

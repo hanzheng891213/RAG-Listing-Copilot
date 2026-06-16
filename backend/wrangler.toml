@@ -1,0 +1,7 @@
+name = "rag-listing-copilot-api"
+main = "src/worker.ts"
+compatibility_date = "2025-06-11"
+compatibility_flags = ["nodejs_compat"]
+
+[env.production]
+vars = { JWT_SECRET = "rag-copilot-jwt-secret-2026-dev" }

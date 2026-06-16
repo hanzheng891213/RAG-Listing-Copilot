@@ -1,12 +1,5 @@
 import type { ModelProvider, ModelInfo, UsageRecord, UsageStats } from '../../types/model.js'
 import { v4 as uuid } from 'uuid'
-import fs from 'fs'
-import path from 'path'
-import { fileURLToPath } from 'url'
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const DATA_DIR = path.resolve(__dirname, '../../../data')
-const USAGE_FILE = path.join(DATA_DIR, 'usage-records.json')
 
 // ─── Built-in provider definitions (no api keys here!) ────────────────
 const BUILTIN_PROVIDERS: ModelProvider[] = [
@@ -61,41 +54,8 @@ class ModelService {
   private usage: UsageRecord[] = []
 
   constructor() {
-    this.loadUsage()
+    // Usage tracking is in-memory only (no file persistence in Workers)
   }
-
-  // ── Usage persistence (only usage, no keys) ──────────────────────────
-
-  private loadUsage(): void {
-    try {
-      if (!fs.existsSync(USAGE_FILE)) return
-      const raw = fs.readFileSync(USAGE_FILE, 'utf-8')
-      const data = JSON.parse(raw)
-      if (Array.isArray(data.usage)) {
-        this.usage = data.usage
-      }
-      console.log('[ModelService] Loaded usage records')
-    } catch (err) {
-      console.error('[ModelService] Failed to load usage:', err)
-    }
-  }
-
-  private saveUsage(): void {
-    try {
-      if (!fs.existsSync(DATA_DIR)) {
-        fs.mkdirSync(DATA_DIR, { recursive: true })
-      }
-      fs.writeFileSync(
-        USAGE_FILE,
-        JSON.stringify({ usage: this.usage.slice(-1000) }, null, 2),
-        'utf-8',
-      )
-    } catch (err) {
-      console.error('[ModelService] Failed to save usage:', err)
-    }
-  }
-
-  // ── Provider info (no keys, no configs) ──────────────────────────────
 
   getBuiltinProviders(): ModelProvider[] {
     return BUILTIN_PROVIDERS
@@ -253,10 +213,6 @@ class ModelService {
       completionTokens,
       cost,
     })
-
-    if (this.usage.length % 10 === 0) {
-      this.saveUsage()
-    }
   }
 
   getUsageStats(days = 30): UsageStats {

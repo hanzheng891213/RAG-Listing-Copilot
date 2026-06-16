@@ -276,7 +276,8 @@ export function useFileUpload() {
         method: 'HEAD',
       })
       clearTimeout(timeoutId)
-      return response.status !== 404 && response.status !== 405
+      // 405 = Method Not Allowed 但路由存在（后端只定义了 POST），视为有效
+      return response.status !== 404
     } catch {
       return false
     }
