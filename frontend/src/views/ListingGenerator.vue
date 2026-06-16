@@ -23,7 +23,7 @@ const auth = useAuthStore()
 const modelStore = useModelStore()
 
 // 流式状态文字轮播（每2.5s切换）
-const STATUS_TEXTS = ['正在生成标题', '正在生成五点描述', '正在生成详情描述', '正在检查合规性','正在进行优化', '正在优化标题', '正在优化五点', '正在优化祥描']
+const STATUS_TEXTS = ['正在生成标题', '正在生成五点描述', '正在生成详情描述', '正在检查合规性', '正在进行优化', '正在优化标题', '正在优化五点', '正在优化详情']
 const displayIndex = ref(0)
 let statusTimer: ReturnType<typeof setInterval> | null = null
 

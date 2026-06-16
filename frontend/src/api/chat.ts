@@ -10,6 +10,10 @@ export interface ChatRequest {
   messages: ChatMessage[]
   listingContext?: GeneratedListing
   providerId?: string
+  apiKey?: string
+  model?: string
+  temperature?: number
+  maxTokens?: number
 }
 
 export interface ChatResponse {

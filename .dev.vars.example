@@ -1,0 +1,13 @@
+# ─── Required: JWT Secret for auth tokens ──────────────────────────────
+# Generate a strong secret:  node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+JWT_SECRET="replace-with-a-random-64-char-hex-string"
+
+# ─── Required for AI API calls ─────────────────────────────────────────
+DEEPSEEK_API_KEY="sk-your-deepseek-api-key"
+
+# ─── Optional: CORS allowed origins (comma-separated) ──────────────────
+# Add your production domain here. Default: http://localhost:5175,http://localhost:3001
+ALLOWED_ORIGINS="http://localhost:5175,http://localhost:3001,https://your-domain.com"
+
+# ─── Optional: Server port ─────────────────────────────────────────────
+PORT=3001

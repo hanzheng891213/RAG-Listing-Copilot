@@ -31,24 +31,14 @@ export interface UsageStats {
 
 export interface ProvidersResponse {
   providers: ModelProvider[]
-  configs: ProviderConfig[]
 }
 
+// Get available providers (NO api keys returned — keys are stored in localStorage only)
 export function getProviders(): Promise<ProvidersResponse> {
   return client.get('/models/providers') as any
 }
 
-export function getProviderConfig(providerId: string): Promise<ProviderConfig> {
-  return client.get(`/models/providers/${providerId}`) as any
-}
-
-export function updateProviderConfig(
-  providerId: string,
-  config: Partial<ProviderConfig & { customModels?: ModelInfo[] }>,
-): Promise<ProviderConfig> {
-  return client.put(`/models/providers/${providerId}`, config) as any
-}
-
+// Get usage stats (server-side tracked from API calls)
 export function getUsageStats(days?: number): Promise<UsageStats> {
   return client.get('/models/usage/stats', { params: { days } }) as any
 }

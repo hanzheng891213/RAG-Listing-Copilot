@@ -4,7 +4,19 @@ import jwt from 'jsonwebtoken'
 import type { User, JwtPayload, LoginRequest, AuthResponse } from '../types/auth.js'
 import { requireAuth } from '../middleware/authMiddleware.js'
 
-const JWT_SECRET = process.env.JWT_SECRET || 'rag-copilot-jwt-secret-2026-dev'
+function getJwtSecret(): string {
+  const secret = process.env.JWT_SECRET
+  if (!secret) {
+    console.warn(
+      '\x1b[33m%s\x1b[0m',
+      '[WARN] JWT_SECRET environment variable is not set. Using insecure default. ' +
+      'Set JWT_SECRET in your .dev.vars or production environment.',
+    )
+  }
+  return secret || 'rag-copilot-jwt-secret-2026-dev'
+}
+
+const JWT_SECRET = getJwtSecret()
 
 // In-memory user store (will be replaced by Cloudflare D1 later)
 export const userStore = new Map<string, User>()

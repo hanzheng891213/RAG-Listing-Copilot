@@ -9,6 +9,10 @@ export function generateListing(data: {
   productData: SupplierProduct
   providerId?: string
   language?: string
+  apiKey?: string
+  model?: string
+  temperature?: number
+  maxTokens?: number
 }) {
   return client.post<GeneratedListing>('/generate-listing', data)
 }
@@ -27,6 +31,10 @@ export function generateListingStream(
     productData: SupplierProduct
     providerId?: string
     language?: string
+    apiKey?: string
+    model?: string
+    temperature?: number
+    maxTokens?: number
   },
   onField: (field: string, value: any) => void,
   onDone: (listing: GeneratedListing, complianceResults: ComplianceResult[]) => void,

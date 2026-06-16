@@ -57,7 +57,7 @@ onMounted(() => {
         </div>
         <div class="monitor-row">
           <span class="label">API Key</span>
-          <span class="value key-masked">{{ modelStore.getMaskedKey(modelStore.activeConfig.providerId) }}</span>
+          <span class="value key-masked">{{ modelStore.maskKey(modelStore.activeConfig.apiKey) }}</span>
         </div>
       </template>
     </div>

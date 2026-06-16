@@ -3,7 +3,19 @@ import jwt from 'jsonwebtoken'
 import type { JwtPayload } from '../types/auth.js'
 import { userStore } from '../controllers/authController.js'
 
-const JWT_SECRET = process.env.JWT_SECRET || 'rag-copilot-jwt-secret-2026-dev'
+function getJwtSecret(): string {
+  const secret = process.env.JWT_SECRET
+  if (!secret) {
+    console.warn(
+      '\x1b[33m%s\x1b[0m',
+      '[WARN] JWT_SECRET environment variable is not set. Using insecure default. ' +
+      'Set JWT_SECRET in your .dev.vars or production environment.',
+    )
+  }
+  return secret || 'rag-copilot-jwt-secret-2026-dev'
+}
+
+const JWT_SECRET = getJwtSecret()
 
 export function extractToken(req: Request): string | null {
   const authHeader = req.headers.authorization

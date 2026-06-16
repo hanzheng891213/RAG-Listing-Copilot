@@ -50,10 +50,15 @@ export const useChatStore = defineStore('chat', () => {
 
     try {
       const modelStore = useModelStore()
+      const activeCfg = modelStore.activeConfig
       const response = await sendChatMessage({
         messages: messages.value.slice(-10),
         listingContext,
-        providerId: modelStore.activeConfig?.providerId,
+        providerId: activeCfg?.providerId,
+        apiKey: activeCfg?.apiKey,
+        model: activeCfg?.activeModel,
+        temperature: activeCfg?.temperature,
+        maxTokens: activeCfg?.maxTokens,
       })
       messages.value.push({ role: 'assistant', content: response.reply })
       return response.reply

@@ -9,7 +9,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import ConfirmButton from '@/components/common/ConfirmButton.vue'
 import {
-  updateProviderConfig, getUsageStats,
+  getUsageStats,
   type UsageStats,
 } from '@/api/models'
 import { useModelStore } from '@/stores/modelStore'
@@ -116,22 +116,18 @@ async function loadData() {
 async function onSave(providerId: string) {
   saving.value[providerId] = true
   try {
-    const payload: any = {
-      apiKey: editForm.value.apiKey || undefined,
+    const existing = modelStore.getConfig(providerId)
+    const config = {
+      providerId,
+      apiKey: editForm.value.apiKey || existing?.apiKey || '',
       activeModel: editForm.value.activeModel,
       temperature: editForm.value.temperature,
       maxTokens: editForm.value.maxTokens,
     }
-
-    // Detect custom model: not in the provider's predefined list
-    const sp = providers.value.find((p) => p.id === providerId)
-    if (sp && editForm.value.activeModel && !sp.models.find((m) => m.id === editForm.value.activeModel)) {
-      payload.customModels = [{ id: editForm.value.activeModel, name: editForm.value.activeModel }]
-    }
-
-    await updateProviderConfig(providerId, payload)
+    modelStore.updateProviderConfig(config)
     ElMessage.success(t('modelManager.saved'))
-    await loadData()
+    // Reset key field after save
+    editForm.value.apiKey = ''
   } catch {
     ElMessage.error(t('modelManager.saveFailed'))
   } finally {
@@ -139,15 +135,10 @@ async function onSave(providerId: string) {
   }
 }
 
-async function onDeleteKey(providerId: string) {
-  try {
-    await updateProviderConfig(providerId, { apiKey: '' })
-    ElMessage.success(t('modelManager.keyDeleted'))
-    editForm.value.apiKey = ''
-    await loadData()
-  } catch {
-    ElMessage.error(t('modelManager.saveFailed'))
-  }
+function onDeleteKey(providerId: string) {
+  modelStore.clearProviderKey(providerId)
+  ElMessage.success(t('modelManager.keyDeleted'))
+  editForm.value.apiKey = ''
 }
 
 function onSelectProvider(id: string) {

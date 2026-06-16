@@ -136,6 +136,9 @@ export const useListingStore = defineStore('listing', () => {
     isStreaming.value = true
     isGenerating.value = true
 
+    // Read apiKey and config from modelStore (keys are in localStorage only)
+    const activeCfg = modelStore.activeConfig
+
     // Create a placeholder listing that gets filled progressively
     const placeholder = createEmptyListing(product, selectedPlatform.value)
     activeListing.value = placeholder
@@ -150,6 +153,10 @@ export const useListingStore = defineStore('listing', () => {
         productData: product,
         providerId: activeProvider,
         language: selectedLanguage.value,
+        apiKey: activeCfg?.apiKey,
+        model: activeCfg?.activeModel,
+        temperature: activeCfg?.temperature,
+        maxTokens: activeCfg?.maxTokens,
       },
       // onField
       (field: string, value: any) => {
@@ -191,15 +198,19 @@ export const useListingStore = defineStore('listing', () => {
 
   async function tryNonStreaming(product: SupplierProduct, language?: string) {
     const modelStore = useModelStore()
-    const activeProvider = modelStore.activeConfig?.providerId
+    const activeCfg = modelStore.activeConfig
     try {
       const listing = await generateListing({
         productId: product.id,
         platform: selectedPlatform.value,
         template: selectedTemplate.value,
         productData: product,
-        providerId: activeProvider,
+        providerId: activeCfg?.providerId,
         language: language || selectedLanguage.value,
+        apiKey: activeCfg?.apiKey,
+        model: activeCfg?.activeModel,
+        temperature: activeCfg?.temperature,
+        maxTokens: activeCfg?.maxTokens,
       })
       addListing(listing)
     } catch (err) {

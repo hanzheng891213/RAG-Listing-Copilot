@@ -57,10 +57,11 @@ router.post('/parse-supplier', (req: Request, res: Response) => {
   }
 })
 
-// POST /api/generate-listing - Generate listing (multi-provider via modelService)
+// POST /api/generate-listing - Generate listing
+// apiKey is passed from frontend per-request, NEVER stored on server
 router.post('/generate-listing', async (req: Request, res: Response) => {
   try {
-    const { productId, platform, template, productData, providerId, language } = req.body
+    const { productId, platform, template, productData, providerId, language, apiKey, model, temperature, maxTokens } = req.body
 
     if (!productData) {
       res.status(400).json({ error: 'productData is required', code: 'ERR_MISSING_PRODUCT_DATA' })
@@ -80,15 +81,13 @@ router.post('/generate-listing', async (req: Request, res: Response) => {
       return
     }
 
-    // Admin: use modelService for multi-provider support
-    const config = modelService.getActiveConfig(providerId)
-
-    if (!config) {
-      res.status(400).json({ error: 'No AI provider configured. Please set up an API key in Model Manager.', code: 'ERR_NO_PROVIDER' })
+    // Admin: apiKey must be provided by frontend (NOT stored on server)
+    if (!apiKey) {
+      res.status(400).json({ error: 'API key is required. Please configure it in Model Manager.', code: 'ERR_NO_API_KEY' })
       return
     }
 
-    console.log('[API] Admin generate — provider:', config.providerId, 'model:', config.activeModel)
+    console.log('[API] Admin generate — provider:', providerId, 'model:', model)
     try {
       const prompt = deepseekService.buildPromptForProvider(productData, platform as Platform, template, language)
 
@@ -96,13 +95,18 @@ router.post('/generate-listing', async (req: Request, res: Response) => {
         ? `You are a helpful e-commerce listing assistant. Respond in JSON format with: title, bulletPoints (array of 5 strings), description, keywords (array of strings). All content MUST be written in ${language}.`
         : 'You are a helpful e-commerce listing assistant. Respond in JSON format with: title, bulletPoints (array of 5 strings), description, keywords (array of strings).'
 
-      const data = await modelService.callProviderAPI(providerId, [
-        { role: 'system', content: systemMsg },
-        { role: 'user', content: prompt },
-      ])
+      const data = await modelService.callProviderAPI(
+        providerId || 'deepseek',
+        apiKey,
+        [
+          { role: 'system', content: systemMsg },
+          { role: 'user', content: prompt },
+        ],
+        { model, temperature, max_tokens: maxTokens },
+      )
 
       if (!data) {
-        res.status(502).json({ error: 'AI API error', code: 'ERR_AI_API' })
+        res.status(502).json({ error: 'AI API error. Please check your API key and model configuration.', code: 'ERR_AI_API' })
         return
       }
 
@@ -140,6 +144,7 @@ router.post('/generate-listing', async (req: Request, res: Response) => {
 })
 
 // POST /api/chat-listing - AI chat (admin only)
+// apiKey is passed from frontend per-request, NEVER stored on server
 router.post('/chat-listing', async (req: Request, res: Response) => {
   // Visitors cannot use chat
   if (!isAdmin(req)) {
@@ -148,16 +153,15 @@ router.post('/chat-listing', async (req: Request, res: Response) => {
   }
 
   try {
-    const { messages, listingContext, providerId } = req.body
+    const { messages, listingContext, providerId, apiKey, model, temperature, maxTokens } = req.body
 
     if (!messages || !Array.isArray(messages)) {
       res.status(400).json({ error: 'messages array is required', code: 'ERR_MISSING_MESSAGES' })
       return
     }
 
-    const config = modelService.getActiveConfig(providerId)
-    if (!config) {
-      res.status(400).json({ error: 'No AI provider configured. Please set up an API key in Model Manager.', code: 'ERR_NO_PROVIDER' })
+    if (!apiKey) {
+      res.status(400).json({ error: 'API key is required.', code: 'ERR_NO_API_KEY' })
       return
     }
 
@@ -165,10 +169,15 @@ router.post('/chat-listing', async (req: Request, res: Response) => {
       ? `You are an e-commerce listing optimization assistant. The user is working on the following listing:\n\nTitle: ${listingContext.title || 'N/A'}\nPlatform: ${listingContext.platform || 'N/A'}\nBullet Points: ${(listingContext.bulletPoints || []).join(' | ')}\nDescription: ${listingContext.description || 'N/A'}\nKeywords: ${(listingContext.keywords || []).join(', ')}\nSEO Score: ${listingContext.seoScore || 'N/A'}\n\nHelp the user refine and improve this listing. Be concise and specific. When suggesting changes, quote the original text and show the improved version.`
       : 'You are an e-commerce listing optimization assistant. Help the user create and refine product listings. Be concise and specific.'
 
-    const data = await modelService.callProviderAPI(providerId, [
-      { role: 'system', content: systemMsg },
-      ...messages,
-    ])
+    const data = await modelService.callProviderAPI(
+      providerId || 'deepseek',
+      apiKey,
+      [
+        { role: 'system', content: systemMsg },
+        ...messages,
+      ],
+      { model, temperature, max_tokens: maxTokens },
+    )
 
     if (!data) {
       res.status(502).json({ error: 'AI API error', code: 'ERR_AI_API' })
@@ -196,9 +205,10 @@ router.post('/check-compliance', (req: Request, res: Response) => {
 })
 
 // POST /api/generate-listing/stream - Streaming generate listing (SSE)
+// apiKey is passed from frontend per-request, NEVER stored on server
 router.post('/generate-listing/stream', async (req: Request, res: Response) => {
   try {
-    const { productId, platform, template, productData, providerId, language } = req.body
+    const { productId, platform, template, productData, providerId, language, apiKey, model, temperature, maxTokens } = req.body
 
     if (!productData) {
       res.status(400).json({ error: 'productData is required', code: 'ERR_MISSING_PRODUCT_DATA' })
@@ -224,9 +234,8 @@ router.post('/generate-listing/stream', async (req: Request, res: Response) => {
       return
     }
 
-    const config = modelService.getActiveConfig(providerId)
-    if (!config) {
-      res.status(400).json({ error: 'No AI provider configured', code: 'ERR_NO_PROVIDER' })
+    if (!apiKey) {
+      res.status(400).json({ error: 'API key is required', code: 'ERR_NO_API_KEY' })
       return
     }
 
@@ -277,10 +286,15 @@ router.post('/generate-listing/stream', async (req: Request, res: Response) => {
     }
 
     try {
-      for await (const chunk of modelService.callProviderAPIStream(providerId, [
-        { role: 'system', content: systemMsg },
-        { role: 'user', content: prompt },
-      ])) {
+      for await (const chunk of modelService.callProviderAPIStream(
+        providerId || 'deepseek',
+        apiKey,
+        [
+          { role: 'system', content: systemMsg },
+          { role: 'user', content: prompt },
+        ],
+        { model, temperature, max_tokens: maxTokens },
+      )) {
         accumulated += chunk
         trySendFields()
       }

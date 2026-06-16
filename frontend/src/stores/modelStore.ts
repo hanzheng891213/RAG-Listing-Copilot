@@ -3,11 +3,46 @@ import { ref, computed } from 'vue'
 import { getProviders, type ModelProvider, type ProviderConfig } from '@/api/models'
 
 const ACTIVE_PROVIDER_KEY = 'rag-copilot-active-provider'
+const CONFIGS_STORAGE_KEY = 'rag-copilot-provider-configs'
+
+// ── localStorage helpers ──────────────────────────────────────────────
+
+function loadConfigsFromStorage(): ProviderConfig[] {
+  try {
+    const raw = localStorage.getItem(CONFIGS_STORAGE_KEY)
+    if (!raw) return []
+    return JSON.parse(raw)
+  } catch {
+    return []
+  }
+}
+
+function saveConfigsToStorage(configs: ProviderConfig[]): void {
+  try {
+    localStorage.setItem(CONFIGS_STORAGE_KEY, JSON.stringify(configs))
+  } catch { /* storage full or unavailable */ }
+}
+
+function loadActiveProviderFromStorage(): string {
+  try {
+    return localStorage.getItem(ACTIVE_PROVIDER_KEY) || ''
+  } catch {
+    return ''
+  }
+}
+
+function saveActiveProviderToStorage(id: string): void {
+  try {
+    localStorage.setItem(ACTIVE_PROVIDER_KEY, id)
+  } catch { /* ignore */ }
+}
+
+// ── Store ─────────────────────────────────────────────────────────────
 
 export const useModelStore = defineStore('model', () => {
   const providers = ref<ModelProvider[]>([])
-  const configs = ref<ProviderConfig[]>([])
-  const activeProviderId = ref<string>('')
+  const configs = ref<ProviderConfig[]>(loadConfigsFromStorage())
+  const activeProviderId = ref<string>(loadActiveProviderFromStorage())
   const loaded = ref(false)
 
   const configuredProviders = computed(() =>
@@ -41,13 +76,17 @@ export const useModelStore = defineStore('model', () => {
     return key.slice(0, 7) + '****' + key.slice(-4)
   }
 
+  /**
+   * Load provider list from backend, configs from localStorage.
+   * Keys NEVER leave the browser.
+   */
   async function loadConfigs() {
     try {
       const res = await getProviders()
       providers.value = res.providers
-      configs.value = res.configs
+      // configs are already loaded from localStorage in the ref init
 
-      const saved = localStorage.getItem(ACTIVE_PROVIDER_KEY)
+      const saved = loadActiveProviderFromStorage()
       if (saved && configs.value.find((c) => c.providerId === saved && c.apiKey)) {
         activeProviderId.value = saved
       } else if (configuredProviders.value.length > 0) {
@@ -59,16 +98,38 @@ export const useModelStore = defineStore('model', () => {
     }
   }
 
-  function setActiveProvider(providerId: string) {
-    activeProviderId.value = providerId
-    try {
-      localStorage.setItem(ACTIVE_PROVIDER_KEY, providerId)
-    } catch { /* ignore */ }
+  /**
+   * Save provider config to localStorage (NOT to server).
+   * Keys stay in the browser only.
+   */
+  function updateProviderConfig(config: ProviderConfig) {
+    const idx = configs.value.findIndex((c) => c.providerId === config.providerId)
+    if (idx >= 0) {
+      configs.value[idx] = config
+    } else {
+      configs.value.push(config)
+    }
+    saveConfigsToStorage(configs.value)
   }
 
-  function getMaskedKey(providerId: string): string {
-    const cfg = configs.value.find((c) => c.providerId === providerId)
-    return cfg?.apiKey || ''
+  /**
+   * Clear a provider's API key from localStorage.
+   */
+  function clearProviderKey(providerId: string) {
+    const idx = configs.value.findIndex((c) => c.providerId === providerId)
+    if (idx >= 0) {
+      configs.value[idx].apiKey = ''
+      saveConfigsToStorage(configs.value)
+    }
+  }
+
+  function setActiveProvider(providerId: string) {
+    activeProviderId.value = providerId
+    saveActiveProviderToStorage(providerId)
+  }
+
+  function getConfig(providerId: string): ProviderConfig | undefined {
+    return configs.value.find((c) => c.providerId === providerId)
   }
 
   return {
@@ -83,7 +144,9 @@ export const useModelStore = defineStore('model', () => {
     activeModelName,
     loadConfigs,
     setActiveProvider,
-    getMaskedKey,
+    updateProviderConfig,
+    clearProviderKey,
+    getConfig,
     maskKey,
   }
 })
