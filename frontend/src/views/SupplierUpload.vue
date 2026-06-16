@@ -9,6 +9,7 @@ import { useFileUpload, UPLOAD_STATUS } from '@/composables/useFileUpload'
 import { FILE_ACCEPT_TYPES } from '@/utils/constants'
 import SupplierFilePreview from '@/components/supplier/SupplierFilePreview.vue'
 import UploadToast from '@/components/upload/UploadToast.vue'
+import ConfirmButton from '@/components/common/ConfirmButton.vue'
 import type { SupplierProduct } from '@/types/supplier'
 
 const { t } = useI18n()
@@ -157,7 +158,7 @@ function handleManualSubmit() {
         <p class="page-desc">{{ t('supplier.description') }}</p>
       </div>
       <div class="header-actions">
-        <el-button v-if="store.hasProducts" type="danger" text @click="store.clearAll()">{{ t('supplier.clearAll') }}</el-button>
+        <ConfirmButton v-if="store.hasProducts" class="delete-btn" type="danger" text :confirm-title="t('common.confirmTitle')" :confirm-message="t('supplier.confirmClearAll')" @click="store.clearAll()">{{ t('supplier.clearAll') }}</ConfirmButton>
         <el-button @click="showManualForm = !showManualForm">
           <el-icon><Edit /></el-icon>
           {{ showManualForm ? t('common.cancel') : t('supplier.manualInput') }}
@@ -434,6 +435,21 @@ function handleManualSubmit() {
   border: 3px dashed var(--accent);
   margin: 12px;
   border-radius: var(--radius-lg);
+}
+
+/* 统一的删除按钮样式 */
+:deep(.delete-btn) {
+  transition: all var(--transition-fast, 0.2s) !important;
+}
+:deep(.delete-btn:hover) {
+  opacity: 0.8;
+  transform: scale(1.04);
+}
+:deep(.delete-btn:hover .el-icon) {
+  transform: scale(1.1);
+}
+:deep(.delete-btn .el-icon) {
+  transition: transform var(--transition-fast, 0.2s);
 }
 
 .drag-hint {

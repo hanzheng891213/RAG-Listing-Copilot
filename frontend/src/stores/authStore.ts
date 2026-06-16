@@ -3,16 +3,7 @@ import { ref, computed } from 'vue'
 import type { UserInfo } from '@/api/auth'
 import { login as loginApi, fetchMe } from '@/api/auth'
 
-const API_KEY_STORAGE = 'rag-copilot-api-key'
 const TOKEN_STORAGE = 'rag-copilot-token'
-
-function loadApiKey(): string {
-  try {
-    return localStorage.getItem(API_KEY_STORAGE) || ''
-  } catch {
-    return ''
-  }
-}
 
 function loadToken(): string {
   try {
@@ -20,16 +11,6 @@ function loadToken(): string {
   } catch {
     return ''
   }
-}
-
-function persistApiKey(key: string) {
-  try {
-    if (key) {
-      localStorage.setItem(API_KEY_STORAGE, key)
-    } else {
-      localStorage.removeItem(API_KEY_STORAGE)
-    }
-  } catch { /* storage unavailable */ }
 }
 
 function persistToken(token: string) {
@@ -43,52 +24,7 @@ function persistToken(token: string) {
 }
 
 export const useAuthStore = defineStore('auth', () => {
-  // --- DeepSeek API key state (existing) ---
-  const apiKey = ref(loadApiKey())
-  const showApiKeyModal = ref(false)
-  const pendingAction = ref<(() => void) | null>(null)
-
-  const isApiKeyConfigured = computed(() => apiKey.value.length > 0)
-  const maskedKey = computed(() => {
-    if (!apiKey.value) return ''
-    const len = apiKey.value.length
-    if (len <= 8) return 'sk-****'
-    return apiKey.value.slice(0, 5) + '****' + apiKey.value.slice(-4)
-  })
-
-  function setKey(key: string) {
-    apiKey.value = key
-    persistApiKey(key)
-  }
-
-  function clearKey() {
-    apiKey.value = ''
-    persistApiKey('')
-  }
-
-  function requireAuth(action: () => void) {
-    if (isApiKeyConfigured.value) {
-      action()
-    } else {
-      pendingAction.value = action
-      showApiKeyModal.value = true
-    }
-  }
-
-  function onKeySubmitted(key: string) {
-    setKey(key)
-    showApiKeyModal.value = false
-    const action = pendingAction.value
-    pendingAction.value = null
-    if (action) action()
-  }
-
-  function cancelApiKey() {
-    showApiKeyModal.value = false
-    pendingAction.value = null
-  }
-
-  // --- User auth state (new) ---
+  // --- User auth state ---
   const token = ref(loadToken())
   const user = ref<UserInfo | null>(null)
   const showLoginModal = ref(false)
@@ -170,16 +106,6 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   return {
-    // API key
-    apiKey,
-    showApiKeyModal,
-    isApiKeyConfigured,
-    maskedKey,
-    setKey,
-    clearKey,
-    requireAuth,
-    onKeySubmitted,
-    cancelApiKey,
     // User auth
     token,
     user,

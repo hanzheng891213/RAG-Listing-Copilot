@@ -3,7 +3,7 @@ import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { setLocale } from '@/locales'
+import { setLocale, LANGUAGES } from '@/locales'
 import { useAuthStore } from '@/stores/authStore'
 import { useKnowledgeStore } from '@/stores/knowledgeStore'
 
@@ -20,14 +20,9 @@ watch(isDark, (val) => {
   document.documentElement.classList.toggle('light', !val)
 }, { immediate: true })
 
-function toggleLang() {
-  setLocale(locale.value === 'zh' ? 'en' : 'zh')
+function toggleLang(lang: string) {
+  setLocale(lang)
   knowledge.refreshLocale()
-}
-
-function handleClearKey() {
-  auth.clearKey()
-  ElMessage.success(t('auth.cleared'))
 }
 
 function handleLogout() {
@@ -36,8 +31,8 @@ function handleLogout() {
   router.push('/')
 }
 
-function goAdmin() {
-  router.push('/admin')
+function goModelManager() {
+  router.push('/model-manager')
 }
 </script>
 
@@ -55,13 +50,23 @@ function goAdmin() {
     </div>
 
     <div class="header-right">
-      <button
-        class="lang-toggle"
-        :title="locale === 'zh' ? 'Switch to English' : '切换到中文'"
-        @click="toggleLang"
-      >
-        {{ locale === 'zh' ? 'EN' : '中文' }}
-      </button>
+      <el-dropdown trigger="click" @command="toggleLang">
+        <button class="lang-toggle" :title="LANGUAGES.find(l => l.code === locale)?.label">
+          {{ LANGUAGES.find(l => l.code === locale)?.native || locale }}
+        </button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item
+              v-for="lang in LANGUAGES"
+              :key="lang.code"
+              :command="lang.code"
+              :class="{ 'is-active': locale === lang.code }"
+            >
+              {{ lang.native }} <span style="color: var(--text-muted); font-size: 11px;">{{ lang.label }}</span>
+            </el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
 
       <button
         class="theme-toggle"
@@ -94,9 +99,9 @@ function goAdmin() {
                   {{ t('user.apiCallsRemaining') }}: {{ auth.apiCallsRemaining }}
                 </span>
               </el-dropdown-item>
-              <el-dropdown-item divided v-if="auth.isAdmin" @click="goAdmin">
-                <el-icon><Setting /></el-icon>
-                {{ t('user.adminSettings') }}
+              <el-dropdown-item v-if="auth.isAdmin" @click="goModelManager">
+                <el-icon><Cpu /></el-icon>
+                {{ t('nav.modelManager') }}
               </el-dropdown-item>
               <el-dropdown-item divided @click="handleLogout">
                 <el-icon><SwitchButton /></el-icon>

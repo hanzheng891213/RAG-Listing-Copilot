@@ -3,7 +3,9 @@ import { ref, computed } from 'vue'
 import type { GeneratedListing, Platform, ComplianceResult } from '@/types/listing'
 import type { SupplierProduct } from '@/types/supplier'
 import { generateId } from '@/utils/formatters'
-import { generateListing } from '@/api/listing'
+import { generateListing, generateListingStream } from '@/api/listing'
+import { useAuthStore } from '@/stores/authStore'
+import { useModelStore } from '@/stores/modelStore'
 import i18n from '@/locales'
 
 function createDemoListing(rawData: Record<string, string>, platform: Platform): GeneratedListing {
@@ -55,6 +57,7 @@ function createDemoListing(rawData: Record<string, string>, platform: Platform):
     template: 'Standard Product Template',
     version: 1,
     createdAt: new Date().toISOString(),
+    isDemo: true,
   }
 }
 
@@ -63,30 +66,145 @@ export const useListingStore = defineStore('listing', () => {
   const activeListing = ref<GeneratedListing | null>(null)
   const selectedPlatform = ref<Platform>('amazon')
   const selectedTemplate = ref<string>('standard')
+  const selectedLanguage = ref<string>('english')
   const isGenerating = ref(false)
+  const isStreaming = ref(false)
   const generationError = ref('')
   const versionHistory = ref<GeneratedListing[]>([])
   const lastProduct = ref<SupplierProduct | null>(null)
+  let streamController: AbortController | null = null
+
+  // 流式生成状态跟踪
+  const receivedFields = ref<Set<string>>(new Set())
+
+  const streamingStatusLabel = computed(() => {
+    if (!receivedFields.value.has('title')) return '生成标题'
+    if (!receivedFields.value.has('bulletPoints')) return '生成五点描述'
+    if (!receivedFields.value.has('description')) return '生成详情描述'
+    if (!receivedFields.value.has('keywords')) return '检查合规性'
+    return '优化中'
+  })
 
   const activeCompliance = computed(() => activeListing.value?.complianceResults ?? [])
   const activeKeywords = computed(() => activeListing.value?.keywords ?? [])
   const hasResults = computed(() => generatedListings.value.length > 0)
 
-  async function generate(product: SupplierProduct) {
-    isGenerating.value = true
-    generationError.value = ''
-    lastProduct.value = product
+  function createEmptyListing(product: SupplierProduct, platform: Platform): GeneratedListing {
+    return {
+      id: generateId(),
+      productId: product.id,
+      title: '',
+      bulletPoints: [],
+      description: '',
+      keywords: [],
+      seoScore: 0,
+      complianceResults: [],
+      platform,
+      template: 'standard',
+      version: 1,
+      createdAt: new Date().toISOString(),
+      isDemo: false,
+    }
+  }
 
+  async function generate(product: SupplierProduct, language?: string) {
+    // 清除旧的生成结果
+    generatedListings.value = []
+    activeListing.value = null
+    versionHistory.value = []
+    receivedFields.value = new Set()
+
+    const auth = useAuthStore()
+    const modelStore = useModelStore()
+    const activeProvider = modelStore.activeConfig?.providerId
+
+    lastProduct.value = product
+    if (language) selectedLanguage.value = language
+    generationError.value = ''
+
+    // Visitors always get demo data
+    if (!auth.isAdmin) {
+      isGenerating.value = true
+      console.log('[Generate] Visitor — using demo mode')
+      generationError.value = i18n.global.t('listing.demoMode')
+      const listing = createDemoListing(product.rawData, selectedPlatform.value)
+      addListing(listing)
+      return
+    }
+
+    // Use streaming for admin users
+    isStreaming.value = true
+    isGenerating.value = true
+
+    // Create a placeholder listing that gets filled progressively
+    const placeholder = createEmptyListing(product, selectedPlatform.value)
+    activeListing.value = placeholder
+    generatedListings.value.unshift(placeholder)
+    versionHistory.value = [placeholder]
+
+    streamController = generateListingStream(
+      {
+        productId: product.id,
+        platform: selectedPlatform.value,
+        template: selectedTemplate.value,
+        productData: product,
+        providerId: activeProvider,
+        language: selectedLanguage.value,
+      },
+      // onField
+      (field: string, value: any) => {
+        if (!activeListing.value) return
+        receivedFields.value = new Set(receivedFields.value).add(field)
+        if (field === 'title') activeListing.value = { ...activeListing.value, title: value }
+        else if (field === 'description') activeListing.value = { ...activeListing.value, description: value }
+        else if (field === 'bulletPoints') activeListing.value = { ...activeListing.value, bulletPoints: value }
+        else if (field === 'keywords') activeListing.value = { ...activeListing.value, keywords: value }
+      },
+      // onDone
+      (listing: GeneratedListing, complianceResults: ComplianceResult[]) => {
+        if (activeListing.value) {
+          activeListing.value = {
+            ...activeListing.value,
+            ...listing,
+            complianceResults,
+            seoScore: 85,
+          }
+        }
+        isStreaming.value = false
+        isGenerating.value = false
+        streamController = null
+      },
+      // onError
+      (message: string) => {
+        console.error('[Generate] Stream error:', message)
+        generationError.value = message
+        isStreaming.value = false
+        isGenerating.value = false
+        streamController = null
+        // Fallback: if no title received yet, try non-streaming
+        if (!activeListing.value?.title) {
+          tryNonStreaming(product, language)
+        }
+      },
+    )
+  }
+
+  async function tryNonStreaming(product: SupplierProduct, language?: string) {
+    const modelStore = useModelStore()
+    const activeProvider = modelStore.activeConfig?.providerId
     try {
       const listing = await generateListing({
         productId: product.id,
         platform: selectedPlatform.value,
         template: selectedTemplate.value,
         productData: product,
+        providerId: activeProvider,
+        language: language || selectedLanguage.value,
       })
-      addListing(listing.data)
-    } catch (_e) {
-      // Fallback to demo mode when backend is unavailable
+      addListing(listing)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      generationError.value = i18n.global.t('listing.backendUnavailable') + ' (' + message + ')'
       const listing = createDemoListing(product.rawData, selectedPlatform.value)
       addListing(listing)
     }
@@ -132,7 +250,10 @@ export const useListingStore = defineStore('listing', () => {
     activeListing,
     selectedPlatform,
     selectedTemplate,
+    selectedLanguage,
     isGenerating,
+    isStreaming,
+    streamingStatusLabel,
     generationError,
     versionHistory,
     lastProduct,

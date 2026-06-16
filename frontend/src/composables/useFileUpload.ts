@@ -46,8 +46,9 @@ const ALLOWED_MIME_TYPES = [
   'text/plain',
 ]
 const MAX_FILE_SIZE = 10 * 1024 * 1024
-const BACKEND_HEALTH_URL = 'http://localhost:3001/health'
-const BACKEND_API_URL = 'http://localhost:3001/api'
+const BASE = import.meta.env.VITE_API_BASE_URL || ''
+const BACKEND_HEALTH_URL = `${BASE}/health`
+const BACKEND_API_URL = `${BASE}/api`
 const UPLOAD_TIMEOUT_MS = 30000
 
 function formatSize(bytes: number): string {

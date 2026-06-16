@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import type { KnowledgeDocument } from '@/types/knowledge'
 import { formatFileSize, truncate } from '@/utils/formatters'
 import dayjs from 'dayjs'
+import ConfirmButton from '@/components/common/ConfirmButton.vue'
 
 const props = defineProps<{ document: KnowledgeDocument }>()
 defineEmits<{ click: []; delete: [] }>()
@@ -76,15 +77,17 @@ const formattedDate = computed(() => {
       <span class="doc-meta">{{ formatFileSize(document.fileSize) }}</span>
       <span class="doc-meta">·</span>
       <span class="doc-meta">{{ formattedDate }}</span>
-      <el-button
+      <ConfirmButton
         class="delete-btn"
         text
         size="small"
         type="danger"
+        :confirm-title="t('common.confirmTitle')"
+        :confirm-message="t('knowledge.confirmDelete')"
         @click.stop="$emit('delete')"
       >
         <el-icon><Delete /></el-icon>
-      </el-button>
+      </ConfirmButton>
     </div>
   </div>
 </template>

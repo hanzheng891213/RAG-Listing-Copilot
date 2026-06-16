@@ -1,9 +1,9 @@
 import axios from 'axios'
-
-const STORAGE_KEY = 'rag-copilot-api-key'
+import i18n from '@/locales'
+import errors from '@/locales/errors'
 
 const client = axios.create({
-  baseURL: 'http://localhost:3001/api',
+  baseURL: `${import.meta.env.VITE_API_BASE_URL || ''}/api`,
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
@@ -12,13 +12,13 @@ const client = axios.create({
 
 client.interceptors.request.use((config) => {
   try {
-    const apiKey = localStorage.getItem(STORAGE_KEY)
-    if (apiKey) {
-      config.headers['X-DeepSeek-API-Key'] = apiKey
-    }
     const token = localStorage.getItem('rag-copilot-token')
     if (token) {
       config.headers['Authorization'] = `Bearer ${token}`
+    }
+    const activeProvider = localStorage.getItem('rag-copilot-active-provider')
+    if (activeProvider) {
+      config.headers['X-Active-Provider'] = activeProvider
     }
   } catch {
     // localStorage unavailable
@@ -29,7 +29,7 @@ client.interceptors.request.use((config) => {
 client.interceptors.response.use(
   (response) => response,
   async (error) => {
-    // On 401, clear the stored token so the user is prompted to log in again
+    // On 401, clear the stored token
     if (error.response?.status === 401) {
       try {
         localStorage.removeItem('rag-copilot-token')
@@ -42,8 +42,25 @@ client.interceptors.response.use(
 client.interceptors.response.use(
   (response) => response.data,
   (error) => {
-    const message = error.response?.data?.message || error.message || 'Request failed'
-    console.error(`[API Error] ${message}`)
+    const code = error.response?.data?.code
+    const rawMessage = error.response?.data?.error || error.message || 'Request failed'
+
+    // Map error code to localized message
+    let message = rawMessage
+    if (code) {
+      try {
+        const locale = i18n.global.locale.value as string
+        if (errors[locale]?.[code]) {
+          message = errors[locale][code]
+        } else if (errors.en?.[code]) {
+          message = errors.en[code]
+        }
+      } catch {
+        // fallback to raw message
+      }
+    }
+
+    console.error(`[API Error] ${message} (${code || 'no-code'})`)
     return Promise.reject(error)
   },
 )

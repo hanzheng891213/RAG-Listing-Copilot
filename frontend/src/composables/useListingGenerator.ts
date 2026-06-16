@@ -21,8 +21,8 @@ export function useListingGenerator() {
     )
   })
 
-  async function handleGenerate(product: SupplierProduct) {
-    await store.generate(product)
+  async function handleGenerate(product: SupplierProduct, language = 'english') {
+    await store.generate(product, language)
   }
 
   function handleRegenerate() {

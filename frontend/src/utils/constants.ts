@@ -13,3 +13,16 @@ export const KNOWLEDGE_CATEGORIES = [
 
 export const FILE_ACCEPT_TYPES = '.csv,.xlsx,.xls,.txt'
 export const FILE_ACCEPT_EXTENSIONS = ['.csv', '.xlsx', '.xls', '.txt']
+
+/** Listing generation target languages */
+export const LISTING_LANGUAGES = [
+  { value: 'english', label: 'listing.languages.english' },
+  { value: 'spanish', label: 'listing.languages.spanish' },
+  { value: 'french', label: 'listing.languages.french' },
+  { value: 'german', label: 'listing.languages.german' },
+  { value: 'russian', label: 'listing.languages.russian' },
+  { value: 'thai', label: 'listing.languages.thai' },
+  { value: 'vietnamese', label: 'listing.languages.vietnamese' },
+] as const
+
+export type ListingLanguage = (typeof LISTING_LANGUAGES)[number]['value']

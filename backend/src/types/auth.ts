@@ -22,10 +22,3 @@ export interface AuthResponse {
   token: string
   user: Omit<User, 'passwordHash'>
 }
-
-export interface AdminSettings {
-  deepseekApiKey: string
-  modelName: string
-  temperature: number
-  maxTokens: number
-}

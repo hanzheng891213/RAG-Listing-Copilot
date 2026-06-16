@@ -10,8 +10,12 @@ export default defineConfig({
     },
   },
   server: {
-    host: '127.0.0.1',
+    host: 'localhost',
     port: 5175,
+    proxy: {
+      '/api': 'http://localhost:3001',
+      '/health': 'http://localhost:3001',
+    },
   },
   css: {
     preprocessorOptions: {

@@ -27,10 +27,10 @@ const routes: RouteRecordRaw[] = [
     meta: { titleKey: 'nav.knowledgeBase', icon: 'Collection' },
   },
   {
-    path: '/admin',
-    name: 'AdminSettings',
-    component: () => import('@/views/AdminSettings.vue'),
-    meta: { titleKey: 'nav.adminSettings', icon: 'Setting', requiresAuth: true, requiresAdmin: true },
+    path: '/model-manager',
+    name: 'ModelManager',
+    component: () => import('@/views/ModelManager.vue'),
+    meta: { titleKey: 'nav.modelManager', icon: 'Cpu', requiresAuth: true },
   },
 ]
 
@@ -44,10 +44,6 @@ router.beforeEach((to, _from, next) => {
     const auth = useAuthStore()
     if (!auth.isLoggedIn) {
       auth.openLoginModal()
-      next('/')
-      return
-    }
-    if (to.meta.requiresAdmin && !auth.isAdmin) {
       next('/')
       return
     }

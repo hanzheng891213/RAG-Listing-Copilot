@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, provide } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import AppSidebar from './AppSidebar.vue'
 import AppHeader from './AppHeader.vue'
 import { useI18n } from 'vue-i18n'
 import { useSupplierStore } from '@/stores/supplierStore'
 import { FILE_ACCEPT_EXTENSIONS } from '@/utils/constants'
+import type { SupplierProduct } from '@/types/supplier'
+import { useSupplierParser } from '@/composables/useSupplierParser'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -109,6 +111,16 @@ onUnmounted(() => {
   window.removeEventListener('dragleave', onDragLeave)
   window.removeEventListener('drop', onDrop)
 })
+
+// 商品详情浮动面板（从 breadcrumb 下方滑出）
+const { getProductLabel } = useSupplierParser()
+const detailProduct = ref<SupplierProduct | null>(null)
+
+function showProductDetail(product: SupplierProduct | null) {
+  detailProduct.value = product
+}
+
+provide('showProductDetail', showProductDetail)
 </script>
 
 <template>
@@ -121,6 +133,25 @@ onUnmounted(() => {
     />
     <div class="main-area" :style="{ marginLeft: sidebarWidth }">
       <AppHeader @toggle-sidebar="toggleSidebar" />
+
+      <!-- 商品详情面板：从 breadcrumb 位置下滑出 -->
+      <Transition name="detail-slide">
+        <div v-if="detailProduct" class="product-detail-overlay" @click.self="detailProduct = null">
+          <div class="product-detail-panel">
+            <div class="detail-header">
+              <span class="detail-title">{{ getProductLabel(detailProduct) }}</span>
+              <button class="detail-close" @click="detailProduct = null">&times;</button>
+            </div>
+            <div class="detail-body">
+              <div v-for="(value, key) in detailProduct.rawData" :key="key" class="detail-row">
+                <span class="detail-label">{{ key }}</span>
+                <span class="detail-value">{{ value || '-' }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Transition>
+
       <main class="main-content">
         <router-view v-slot="{ Component }">
           <transition name="page" mode="out-in">
@@ -232,6 +263,103 @@ onUnmounted(() => {
 @keyframes scale-in {
   from { transform: scale(0.95); opacity: 0; }
   to { transform: scale(1); opacity: 1; }
+}
+
+/* ---- 商品详情面板（从 breadcrumb 下滑出） ---- */
+.product-detail-overlay {
+  position: relative;
+  z-index: 50;
+  padding: 0 32px;
+  max-width: 1440px;
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+.product-detail-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+}
+.detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+.detail-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.detail-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.detail-close:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+.detail-body {
+  padding: 12px 20px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 24px;
+}
+.detail-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+.detail-row .detail-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  min-width: 80px;
+  flex-shrink: 0;
+}
+.detail-row .detail-value {
+  font-size: 12px;
+  color: var(--text-primary);
+  word-break: break-all;
+  line-height: 1.3;
+}
+
+/* Slide transition */
+.detail-slide-enter-active {
+  transition: all 0.3s ease-out;
+  overflow: hidden;
+}
+.detail-slide-leave-active {
+  transition: all 0.2s ease-in;
+  overflow: hidden;
+}
+.detail-slide-enter-from,
+.detail-slide-leave-to {
+  opacity: 0;
+  max-height: 0;
+}
+.detail-slide-enter-to,
+.detail-slide-leave-from {
+  opacity: 1;
+  max-height: 500px;
 }
 
 @media (max-width: 1024px) {

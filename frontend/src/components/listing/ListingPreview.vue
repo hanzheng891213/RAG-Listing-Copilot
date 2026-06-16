@@ -7,7 +7,7 @@ import type { GeneratedListing } from '@/types/listing'
 const props = defineProps<{ listing: GeneratedListing }>()
 const { t } = useI18n()
 
-const activeTab = ref<'title' | 'bullets' | 'description'>('bullets')
+const activeTab = ref<'title' | 'bullets' | 'description'>('title')
 
 const renderedDescription = computed(() => marked.parse(props.listing.description))
 

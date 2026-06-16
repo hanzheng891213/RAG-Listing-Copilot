@@ -2,9 +2,11 @@
 import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { useAuthStore } from '@/stores/authStore'
 
 const { t } = useI18n()
 const router = useRouter()
+const auth = useAuthStore()
 
 const features = [
   { titleKey: 'home.features.upload.title', descKey: 'home.features.upload.desc', icon: 'Upload', route: '/supplier-upload', color: 'var(--accent)' },
@@ -49,14 +51,26 @@ onMounted(() => {
         </h1>
         <p class="hero-subtitle">{{ t('home.heroSubtitle') }}</p>
         <div class="hero-actions">
-          <button class="btn-primary" @click="navigate('/supplier-upload')">
-            <el-icon><Upload /></el-icon>
-            <span>{{ t('home.uploadBtn') }}</span>
-          </button>
-          <button class="btn-secondary" @click="navigate('/listing-generator')">
-            <span>{{ t('home.demoBtn') }}</span>
-            <el-icon><ArrowRight /></el-icon>
-          </button>
+          <template v-if="auth.isLoggedIn">
+            <button class="btn-primary" @click="navigate('/listing-generator')">
+              <el-icon><MagicStick /></el-icon>
+              <span>{{ t('home.uploadBtn') }}</span>
+            </button>
+            <button class="btn-secondary" @click="navigate('/model-manager')">
+              <span>{{ t('nav.modelManager') }}</span>
+              <el-icon><ArrowRight /></el-icon>
+            </button>
+          </template>
+          <template v-else>
+            <button class="btn-primary" @click="auth.openLoginModal()">
+              <el-icon><UserFilled /></el-icon>
+              <span>{{ t('home.loginBtn') }}</span>
+            </button>
+            <button class="btn-secondary" @click="navigate('/listing-generator')">
+              <span>{{ t('home.demoBtn') }}</span>
+              <el-icon><ArrowRight /></el-icon>
+            </button>
+          </template>
         </div>
       </div>
       <div class="hero-visual">

@@ -31,7 +31,16 @@
       "Bash(npm run *)",
       "Bash(git commit -m ' *)",
       "Bash(git push *)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(curl -s http://localhost:3001/)",
+      "Bash(node *)",
+      "Bash(curl *)",
+      "Bash(model: {)",
+      "Bash(title: 'Model Monitor',)",
+      "Bash(demoNotice: 'No model data — using demo mode',)",
+      "Bash(model: 'Model',)",
+      "Bash(temperature: 'Temperature',)",
+      "Bash(listing backend *)"
     ]
   }
 }

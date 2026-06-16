@@ -11,6 +11,7 @@ export interface GeneratedListing {
   template: string
   version: number
   createdAt: string
+  isDemo?: boolean
 }
 
 export interface ComplianceResult {

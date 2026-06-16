@@ -2,7 +2,6 @@ import type { SupplierProduct, GeneratedListing, Platform, ComplianceResult } fr
 import { ragService } from '../rag/ragService.js'
 import { v4 as uuid } from 'uuid'
 
-const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || ''
 const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1'
 
 function getProductLabel(product: SupplierProduct): string {
@@ -15,17 +14,33 @@ export class DeepSeekService {
     product: SupplierProduct,
     platform: Platform,
     template: string,
+    apiKey?: string,
   ): Promise<GeneratedListing> {
     const label = getProductLabel(product)
     const relevantDocs = ragService.searchRelevantDocs(label, platform)
 
     const prompt = this.buildPrompt(product, platform, template, relevantDocs)
 
-    if (DEEPSEEK_API_KEY) {
-      return this.callDeepSeekAPI(prompt, product, platform, template)
+    const key = apiKey || process.env.DEEPSEEK_API_KEY || ''
+
+    if (key) {
+      console.log('[DeepSeek] Using real API for generation')
+      return this.callDeepSeekAPI(prompt, product, platform, template, key)
     }
 
+    console.log('[DeepSeek] No API key configured, using demo mode')
     return this.generateDemoListing(product, platform, template)
+  }
+
+  buildPromptForProvider(
+    product: SupplierProduct,
+    platform: Platform,
+    _template?: string,
+    language?: string,
+  ): string {
+    const label = getProductLabel(product)
+    const docs = ragService.searchRelevantDocs(label, platform)
+    return this.buildPrompt(product, platform, _template || 'standard', docs, language)
   }
 
   private buildPrompt(
@@ -33,7 +48,12 @@ export class DeepSeekService {
     platform: Platform,
     _template: string,
     docs: ReturnType<typeof ragService.searchRelevantDocs>,
+    language?: string,
   ): string {
+    const langInstruction = language && language !== 'english'
+      ? `\n\nIMPORTANT: All generated content (title, bullet points, description, keywords) MUST be written entirely in ${language}. Do not use English.`
+      : ''
+
     return `You are an expert e-commerce listing optimizer for ${platform}.
 
 Raw Product Data:
@@ -52,7 +72,7 @@ Please generate:
 2. Five compelling bullet points highlighting key features and benefits
 3. A detailed product description with specifications
 4. SEO keywords for better search visibility
-
+${langInstruction}
 Respond in JSON format:
 {
   "title": "...",
@@ -67,12 +87,13 @@ Respond in JSON format:
     product: SupplierProduct,
     platform: Platform,
     template: string,
+    apiKey: string,
   ): Promise<GeneratedListing> {
     const response = await fetch(`${DEEPSEEK_BASE_URL}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${DEEPSEEK_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
         model: 'deepseek-chat',
@@ -113,6 +134,7 @@ Respond in JSON format:
       template,
       version: 1,
       createdAt: new Date().toISOString(),
+      isDemo: false,
     }
   }
 
@@ -151,6 +173,7 @@ Respond in JSON format:
       template,
       version: 1,
       createdAt: new Date().toISOString(),
+      isDemo: true,
     }
   }
 

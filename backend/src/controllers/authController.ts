@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken'
 import type { User, JwtPayload, LoginRequest, AuthResponse } from '../types/auth.js'
 import { requireAuth } from '../middleware/authMiddleware.js'
 
-const JWT_SECRET = 'rag-copilot-jwt-secret-2026'
+const JWT_SECRET = process.env.JWT_SECRET || 'rag-copilot-jwt-secret-2026-dev'
 
 // In-memory user store (will be replaced by Cloudflare D1 later)
 export const userStore = new Map<string, User>()
@@ -65,7 +65,7 @@ router.post('/login', (req: Request, res: Response) => {
     const { username, password } = req.body as LoginRequest
 
     if (!username || !password) {
-      res.status(400).json({ error: 'Username and password are required' })
+      res.status(400).json({ error: 'Username and password are required', code: 'ERR_MISSING_CREDENTIALS' })
       return
     }
 
@@ -74,7 +74,7 @@ router.post('/login', (req: Request, res: Response) => {
     )
 
     if (!user || !bcrypt.compareSync(password, user.passwordHash)) {
-      res.status(401).json({ error: 'Invalid username or password' })
+      res.status(401).json({ error: 'Invalid username or password', code: 'ERR_INVALID_CREDENTIALS' })
       return
     }
 
@@ -86,7 +86,7 @@ router.post('/login', (req: Request, res: Response) => {
     res.json(response)
   } catch (error) {
     console.error('Login error:', error)
-    res.status(500).json({ error: 'Login failed' })
+    res.status(500).json({ error: 'Login failed', code: 'ERR_LOGIN_FAILED' })
   }
 })
 
@@ -96,7 +96,7 @@ router.get('/me', requireAuth, (req: Request, res: Response) => {
   const user = userStore.get(payload.userId)
 
   if (!user) {
-    res.status(404).json({ error: 'User not found' })
+    res.status(404).json({ error: 'User not found', code: 'ERR_USER_NOT_FOUND' })
     return
   }
 
