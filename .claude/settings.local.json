@@ -40,7 +40,13 @@
       "Bash(demoNotice: 'No model data — using demo mode',)",
       "Bash(model: 'Model',)",
       "Bash(temperature: 'Temperature',)",
-      "Bash(listing backend *)"
+      "Bash(listing backend *)",
+      "Bash(git *)",
+      "WebFetch(domain:www.honghebusiness.com)",
+      "WebFetch(domain:www.amazonsellers.attorney)",
+      "WebFetch(domain:gobrandwoven.com)",
+      "Bash(python3 -m json.tool)",
+      "Bash(npx kill-port *)"
     ]
   }
 }

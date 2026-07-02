@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useKnowledgeBase } from '@/composables/useKnowledgeBase'
 import { KNOWLEDGE_CATEGORIES, PLATFORMS } from '@/utils/constants'
@@ -7,6 +8,10 @@ import DocumentUploadDialog from '@/components/knowledge/DocumentUploadDialog.vu
 
 const { t } = useI18n()
 const { store, uploadDialogVisible, viewDocument, selectedDoc, detailVisible, formatDocDate } = useKnowledgeBase()
+
+onMounted(() => {
+  store.fetchFromServer()
+})
 
 const categoryTagTypes: Record<string, 'danger' | 'success' | 'info'> = {
   platform_rules: 'danger', templates: 'success', history: 'info',
@@ -27,6 +32,12 @@ const tabKeys: Record<string, string> = {
         <p class="page-desc">{{ t('knowledge.description') }}</p>
       </div>
       <div class="header-actions">
+        <span v-if="store.isLoading" class="sync-indicator">
+          <el-icon class="spin"><Loading /></el-icon> {{ t('knowledge.syncing') }}
+        </span>
+        <span v-else-if="store.serverAvailable" class="sync-indicator synced">
+          <el-icon><CircleCheck /></el-icon> {{ t('knowledge.synced') }}
+        </span>
         <el-button type="primary" @click="uploadDialogVisible = true">
           <el-icon><Upload /></el-icon>
           {{ t('knowledge.uploadDoc') }}
@@ -91,7 +102,11 @@ const tabKeys: Record<string, string> = {
 .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; gap: 20px; flex-wrap: wrap; }
 .page-title { font-size: 28px; font-weight: 400; margin-bottom: 8px; }
 .page-desc { color: var(--text-secondary); font-size: 15px; max-width: 560px; line-height: 1.6; }
-.header-actions { flex-shrink: 0; }
+.header-actions { flex-shrink: 0; display: flex; align-items: center; gap: 12px; }
+.sync-indicator { font-size: 13px; color: var(--text-muted); display: flex; align-items: center; gap: 4px; }
+.sync-indicator.synced { color: var(--success); }
+.spin { animation: spin 1s linear infinite; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .toolbar { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; align-items: center; }
 .search-bar { flex: 1; min-width: 260px; }
 .platform-filters { display: flex; gap: 8px; flex-wrap: wrap; }

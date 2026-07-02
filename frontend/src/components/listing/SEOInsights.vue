@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useTypewriterList } from '@/composables/useTypewriter'
 
 const props = defineProps<{ keywords: string[]; seoScore: number }>()
 const { t } = useI18n()
+
+const { displayItems: displayKeywords } = useTypewriterList(() => props.keywords, { speed: 40, itemGap: 300 })
 
 const scoreColor = computed(() => {
   if (props.seoScore >= 85) return 'var(--success)'
@@ -28,7 +31,7 @@ const scoreLabelKey = computed(() => {
     <div class="keywords-section">
       <h4 class="keywords-title">{{ t('listing.suggestedKeywords') }}</h4>
       <div class="keywords-list">
-        <span v-for="kw in keywords" :key="kw" class="keyword-tag">{{ kw }}</span>
+        <span v-for="(kw, i) in displayKeywords" :key="i" class="keyword-tag" :class="{ typing: kw && kw.length < (props.keywords[i] || '').length }">{{ kw }}<span v-if="kw && kw.length < (props.keywords[i] || '').length" class="cursor-blink">|</span></span>
       </div>
     </div>
   </div>
@@ -45,4 +48,14 @@ const scoreLabelKey = computed(() => {
 .keywords-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .keyword-tag { padding: 4px 10px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 20px; font-size: 12px; color: var(--text-secondary); transition: all var(--transition-fast); }
 .keyword-tag:hover { border-color: var(--accent-dim); color: var(--accent); background: var(--accent-glow); }
+.keyword-tag.typing { border-color: var(--accent-dim); }
+
+.cursor-blink {
+  animation: blink 1s step-end infinite;
+  color: var(--accent);
+}
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
 </style>

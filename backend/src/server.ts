@@ -5,12 +5,13 @@ import authController from './controllers/authController.js'
 import modelController from './controllers/modelController.js'
 import { requireAuth, requireAdmin, checkApiUsage } from './middleware/authMiddleware.js'
 import { rateLimiter } from './middleware/rateLimiter.js'
+import { seedKnowledgeBase } from './services/knowledge/seed.js'
 
 const app = express()
 const PORT = process.env.PORT || 3001
 
 // ── Security: CORS whitelist ──────────────────────────────────────────
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'http://localhost:5175,http://localhost:3001')
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'http://localhost:5175,http://localhost:5176,http://localhost:3001')
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean)
@@ -84,10 +85,20 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
   res.status(500).json({ error: 'Internal server error', code: 'ERR_INTERNAL' })
 })
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`Server running on http://localhost:${PORT}`)
   console.log(`Allowed origins: ${ALLOWED_ORIGINS.join(', ') || '(none configured)'}`)
   console.log(`Health check: http://localhost:${PORT}/health`)
+
+  // Seed knowledge base from local markdown files
+  try {
+    const count = await seedKnowledgeBase()
+    if (count > 0) {
+      console.log(`[Server] Knowledge base seeded with ${count} documents.`)
+    }
+  } catch (err) {
+    console.warn('[Server] Knowledge base seeding failed (non-fatal):', err)
+  }
 })
 
 export default app

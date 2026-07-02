@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import type { KnowledgeDocument, KnowledgeCategory, SearchResult } from '@/types/knowledge'
 import { generateId } from '@/utils/formatters'
 import i18n from '@/locales'
+import { listDocuments, searchKnowledge, uploadDocument, deleteDocument } from '@/api/knowledge'
 
 interface SeedDoc {
   id: string
@@ -16,37 +17,37 @@ interface SeedDoc {
 }
 
 const SEED_DOCS_EN: SeedDoc[] = [
-  { id: '1', title: 'Amazon Prohibited Seller Activities', excerpt: 'Comprehensive guide on Amazon prohibited seller activities and actions, including listing restrictions and policy violations.', tags: ['amazon', 'prohibited', 'compliance'], category: 'platform_rules', platform: 'amazon', fileType: 'pdf', fileSize: 245000 },
-  { id: '2', title: 'Electronics Listing Best Practices', excerpt: 'Proven electronics category listing template with optimized bullet points structure and keyword placement strategies.', tags: ['electronics', 'template', 'seo'], category: 'templates', platform: 'amazon', fileType: 'md', fileSize: 12800 },
-  { id: '3', title: 'eBay Category-Specific Requirements', excerpt: 'Detailed eBay category listing requirements including item specifics, condition descriptions, and product identifiers.', tags: ['ebay', 'category', 'requirements'], category: 'platform_rules', platform: 'ebay', fileType: 'pdf', fileSize: 180000 },
-  { id: '4', title: 'Home & Kitchen Template v2', excerpt: 'Updated Home & Kitchen listing template with enhanced A+ content structure and lifestyle image guidelines.', tags: ['home', 'kitchen', 'template'], category: 'templates', platform: 'shopify', fileType: 'md', fileSize: 9600 },
-  { id: '5', title: 'Bluetooth Speaker - Successful Listing', excerpt: 'Successfully approved Amazon listing for Bluetooth speaker with 4.5-star rating. Generated using RAG template.', tags: ['electronics', 'bluetooth', 'speaker', 'success'], category: 'history', platform: 'amazon', fileType: 'json', fileSize: 4500 },
-  { id: '6', title: 'Shopify SEO Optimization Guide', excerpt: 'Shopify-specific SEO guide covering title tags, meta descriptions, URL handles, and alt text best practices.', tags: ['shopify', 'seo', 'optimization'], category: 'templates', platform: 'shopify', fileType: 'md', fileSize: 15400 },
-  { id: '7', title: 'Restricted Keywords Database', excerpt: 'Curated database of restricted and prohibited keywords across Amazon, eBay, Shopify, and Etsy platforms.', tags: ['keywords', 'restricted', 'compliance', 'all-platforms'], category: 'platform_rules', platform: 'amazon', fileType: 'csv', fileSize: 32000 },
-  { id: '8', title: 'LED Strip Lights - Rejected & Fixed', excerpt: 'Initially rejected Amazon listing for LED strip lights. Documented fix: removed unverified wattage claims.', tags: ['electronics', 'led', 'rejected', 'fixed'], category: 'history', platform: 'amazon', fileType: 'json', fileSize: 5800 },
+  { id: 'seed-1', title: 'Amazon Selling Policies & Code of Conduct', excerpt: 'Complete seller code of conduct covering accurate information, fair conduct, review manipulation, communications, and multiple account policies.', tags: ['amazon', 'code-of-conduct', 'compliance'], category: 'platform_rules', platform: 'amazon', fileType: 'md', fileSize: 3200 },
+  { id: 'seed-2', title: 'Amazon Prohibited & Restricted Products', excerpt: 'Categories of prohibited and restricted products, ungating requirements, prohibited claims and keywords, and marketplace-specific variations.', tags: ['amazon', 'restricted', 'compliance'], category: 'platform_rules', platform: 'amazon', fileType: 'md', fileSize: 4500 },
+  { id: 'seed-3', title: 'Amazon Product Detail Page Rules', excerpt: 'Title, image, bullet point, description, and variation requirements with compliance checklist.', tags: ['amazon', 'listing', 'detail-page'], category: 'platform_rules', platform: 'amazon', fileType: 'md', fileSize: 5500 },
+  { id: 'seed-4', title: 'Product Safety & Compliance Certifications', excerpt: 'FDA, CPC, CE, FCC certification requirements by product category and marketplace.', tags: ['compliance', 'safety', 'certification'], category: 'platform_rules', platform: 'amazon', fileType: 'md', fileSize: 4800 },
+  { id: 'seed-5', title: 'Category Listing Restrictions', excerpt: 'Gated categories including Jewelry, Beauty, Baby, Automotive with approval requirements and application process.', tags: ['categories', 'gated', 'approval'], category: 'platform_rules', platform: 'amazon', fileType: 'md', fileSize: 6200 },
+  { id: 'seed-6', title: 'Electronics Listing Template', excerpt: 'Optimized template for electronics category with structured bullet points and keyword placement.', tags: ['electronics', 'template', 'seo'], category: 'templates', platform: 'amazon', fileType: 'md', fileSize: 2800 },
+  { id: 'seed-7', title: 'Home & Kitchen Template', excerpt: 'Home & Kitchen listing template with A+ content structure and lifestyle image guidelines.', tags: ['home', 'kitchen', 'template'], category: 'templates', platform: 'amazon', fileType: 'md', fileSize: 2400 },
+  { id: 'seed-8', title: 'Restricted Keywords Database', excerpt: 'Database of prohibited claims and restricted keywords across all platforms.', tags: ['keywords', 'restricted', 'all-platforms'], category: 'platform_rules', platform: 'amazon', fileType: 'md', fileSize: 3800 },
 ]
 
 const SEED_DOCS_ZH: SeedDoc[] = [
-  { id: '1', title: '亚马逊禁止卖家行为指南', excerpt: '亚马逊禁止卖家活动和行为的全面指南，包括上架限制和政策违规说明。', tags: ['亚马逊', '禁止', '合规'], category: 'platform_rules', platform: 'amazon', fileType: 'pdf', fileSize: 245000 },
-  { id: '2', title: '电子产品上架最佳实践', excerpt: '经过验证的电子产品类目上架模板，包含优化的五点描述结构和关键词布局策略。', tags: ['电子产品', '模板', 'SEO'], category: 'templates', platform: 'amazon', fileType: 'md', fileSize: 12800 },
-  { id: '3', title: 'eBay 品类特定要求', excerpt: '详细的 eBay 品类上架要求，包括商品特性、状况描述和产品标识符说明。', tags: ['eBay', '品类', '要求'], category: 'platform_rules', platform: 'ebay', fileType: 'pdf', fileSize: 180000 },
-  { id: '4', title: '家居厨房模板 v2', excerpt: '更新版家居厨房上架模板，包含增强的 A+ 内容结构和生活场景图片指南。', tags: ['家居', '厨房', '模板'], category: 'templates', platform: 'shopify', fileType: 'md', fileSize: 9600 },
-  { id: '5', title: '蓝牙音箱 - 成功上架案例', excerpt: '已成功通过审核的亚马逊蓝牙音箱上架信息，评分 4.5 星。使用 RAG 模板生成。', tags: ['电子产品', '蓝牙', '音箱', '成功'], category: 'history', platform: 'amazon', fileType: 'json', fileSize: 4500 },
-  { id: '6', title: 'Shopify SEO 优化指南', excerpt: 'Shopify 专属 SEO 指南，涵盖标题标签、元描述、URL 处理和图片 alt 文本最佳实践。', tags: ['Shopify', 'SEO', '优化'], category: 'templates', platform: 'shopify', fileType: 'md', fileSize: 15400 },
-  { id: '7', title: '受限关键词数据库', excerpt: '精心整理的亚马逊、eBay、Shopify 和 Etsy 平台受限和禁止关键词数据库。', tags: ['关键词', '受限', '合规', '全平台'], category: 'platform_rules', platform: 'amazon', fileType: 'csv', fileSize: 32000 },
-  { id: '8', title: 'LED 灯带 - 被拒与修复案例', excerpt: '初次被拒的亚马逊 LED 灯带上架信息。修复记录：移除了未经验证的功率声明。', tags: ['电子产品', 'LED', '被拒', '已修复'], category: 'history', platform: 'amazon', fileType: 'json', fileSize: 5800 },
+  { id: 'seed-1', title: '亚马逊销售政策与卖家行为准则', excerpt: '完整的卖家行为准则，涵盖准确信息、公平行事、评论操纵、通信规则和多账户政策。', tags: ['亚马逊', '行为准则', '合规'], category: 'platform_rules', platform: 'amazon', fileType: 'md', fileSize: 3200 },
+  { id: 'seed-2', title: '亚马逊禁售与受限商品政策', excerpt: '禁售和受限商品类别、解除限制要求、禁止声明和关键词、各站点差异。', tags: ['亚马逊', '受限', '合规'], category: 'platform_rules', platform: 'amazon', fileType: 'md', fileSize: 4500 },
+  { id: 'seed-3', title: '亚马逊商品详情页规则', excerpt: '标题、图片、五点描述、产品描述和变体要求，附合规检查清单。', tags: ['亚马逊', '上架', '详情页'], category: 'platform_rules', platform: 'amazon', fileType: 'md', fileSize: 5500 },
+  { id: 'seed-4', title: '产品安全与合规认证', excerpt: 'FDA、CPC、CE、FCC 认证要求，按产品类别和站点分类。', tags: ['合规', '安全', '认证'], category: 'platform_rules', platform: 'amazon', fileType: 'md', fileSize: 4800 },
+  { id: 'seed-5', title: '品类准入与分类审核', excerpt: '受限类别包括珠宝、美容、婴儿、汽车等，附批准要求和申请流程。', tags: ['品类', '受限', '批准'], category: 'platform_rules', platform: 'amazon', fileType: 'md', fileSize: 6200 },
+  { id: 'seed-6', title: '电子产品上架模板', excerpt: '电子产品类目优化模板，包含结构化五点描述和关键词布局。', tags: ['电子产品', '模板', 'SEO'], category: 'templates', platform: 'amazon', fileType: 'md', fileSize: 2800 },
+  { id: 'seed-7', title: '家居厨房模板', excerpt: '家居厨房上架模板，包含 A+ 内容结构和生活场景图片指南。', tags: ['家居', '厨房', '模板'], category: 'templates', platform: 'amazon', fileType: 'md', fileSize: 2400 },
+  { id: 'seed-8', title: '受限关键词数据库', excerpt: '所有平台的禁止声明和受限关键词数据库。', tags: ['关键词', '受限', '全平台'], category: 'platform_rules', platform: 'amazon', fileType: 'md', fileSize: 3800 },
 ]
 
-const SEED_IDS = ['1', '2', '3', '4', '5', '6', '7', '8']
+const SEED_IDS = ['seed-1', 'seed-2', 'seed-3', 'seed-4', 'seed-5', 'seed-6', 'seed-7', 'seed-8']
 const FIXED_DATES: Record<string, { uploadedAt: string; updatedAt: string }> = {
-  '1': { uploadedAt: '2026-05-10T08:00:00Z', updatedAt: '2026-05-10T08:00:00Z' },
-  '2': { uploadedAt: '2026-05-12T10:30:00Z', updatedAt: '2026-05-15T14:20:00Z' },
-  '3': { uploadedAt: '2026-05-08T09:15:00Z', updatedAt: '2026-05-08T09:15:00Z' },
-  '4': { uploadedAt: '2026-05-14T16:45:00Z', updatedAt: '2026-05-18T11:00:00Z' },
-  '5': { uploadedAt: '2026-05-16T13:20:00Z', updatedAt: '2026-05-16T13:20:00Z' },
-  '6': { uploadedAt: '2026-05-11T07:30:00Z', updatedAt: '2026-05-11T07:30:00Z' },
-  '7': { uploadedAt: '2026-05-09T11:00:00Z', updatedAt: '2026-05-17T09:30:00Z' },
-  '8': { uploadedAt: '2026-05-13T15:10:00Z', updatedAt: '2026-05-13T15:10:00Z' },
+  'seed-1': { uploadedAt: '2026-06-30T08:00:00Z', updatedAt: '2026-06-30T08:00:00Z' },
+  'seed-2': { uploadedAt: '2026-06-30T08:00:00Z', updatedAt: '2026-06-30T08:00:00Z' },
+  'seed-3': { uploadedAt: '2026-06-30T08:00:00Z', updatedAt: '2026-06-30T08:00:00Z' },
+  'seed-4': { uploadedAt: '2026-06-30T08:00:00Z', updatedAt: '2026-06-30T08:00:00Z' },
+  'seed-5': { uploadedAt: '2026-06-30T08:00:00Z', updatedAt: '2026-06-30T08:00:00Z' },
+  'seed-6': { uploadedAt: '2026-06-30T08:00:00Z', updatedAt: '2026-06-30T08:00:00Z' },
+  'seed-7': { uploadedAt: '2026-06-30T08:00:00Z', updatedAt: '2026-06-30T08:00:00Z' },
+  'seed-8': { uploadedAt: '2026-06-30T08:00:00Z', updatedAt: '2026-06-30T08:00:00Z' },
 }
 
 function buildSeedDocuments(docs: SeedDoc[]): KnowledgeDocument[] {
@@ -60,6 +61,7 @@ function buildSeedDocuments(docs: SeedDoc[]): KnowledgeDocument[] {
     platform: d.platform,
     fileType: d.fileType,
     fileSize: d.fileSize,
+    chunkCount: 1,
     ...FIXED_DATES[d.id],
   }))
 }
@@ -74,6 +76,8 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
   const activePlatform = ref<string>('')
   const results = ref<SearchResult[]>([])
   const isSearching = ref(false)
+  const isLoading = ref(false)
+  const serverAvailable = ref(false)
 
   function refreshLocale() {
     const loc = i18n.global.locale.value as string
@@ -132,6 +136,89 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     searchQuery.value = q
   }
 
+  // ── Server sync ──────────────────────────────────────────────────
+
+  async function fetchFromServer() {
+    isLoading.value = true
+    try {
+      const res = await listDocuments()
+      const serverDocs = res.data.documents.map((d: any) => ({
+        ...d,
+        excerpt: d.content?.slice(0, 200) ?? '',
+        uploadedAt: d.createdAt ?? d.uploadedAt,
+        chunkCount: d.chunkCount ?? 1,
+      }))
+      // Merge: keep seed docs, add server docs
+      const userDocs = documents.value.filter((d) => !SEED_IDS.includes(d.id))
+      documents.value = [...serverDocs, ...userDocs]
+      serverAvailable.value = true
+    } catch {
+      // Server not available, keep local data
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  async function searchOnServer(q: string, platform?: string) {
+    isSearching.value = true
+    try {
+      const res = await searchKnowledge(q, platform)
+      results.value = (res.data.results ?? []).map((r: any) => ({
+        document: {
+          ...r.document,
+          excerpt: r.document.content?.slice(0, 200) ?? r.document.excerpt ?? '',
+          uploadedAt: r.document.createdAt ?? r.document.uploadedAt ?? '',
+          chunkCount: r.document.chunkCount ?? 1,
+        },
+        score: r.score ?? 0,
+      }))
+      serverAvailable.value = true
+    } catch {
+      // Fall back to local search
+      results.value = []
+    } finally {
+      isSearching.value = false
+    }
+  }
+
+  async function uploadToServer(doc: {
+    title: string
+    category: KnowledgeCategory
+    platform?: string
+    tags: string[]
+    content: string
+    file?: File
+  }): Promise<boolean> {
+    try {
+      const formData = new FormData()
+      if (doc.file) {
+        formData.append('file', doc.file)
+      }
+      formData.append('title', doc.title)
+      formData.append('category', doc.category)
+      if (doc.platform) formData.append('platform', doc.platform)
+      formData.append('tags', JSON.stringify(doc.tags))
+      if (doc.content) formData.append('content', doc.content)
+
+      await uploadDocument(formData)
+      serverAvailable.value = true
+      await fetchFromServer()
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  async function deleteFromServer(id: string): Promise<boolean> {
+    try {
+      await deleteDocument(id)
+      await fetchFromServer()
+      return true
+    } catch {
+      return false
+    }
+  }
+
   return {
     documents,
     searchQuery,
@@ -139,6 +226,8 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     activePlatform,
     results,
     isSearching,
+    isLoading,
+    serverAvailable,
     filteredDocuments,
     tabCounts,
     setTab,
@@ -147,5 +236,9 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     removeDocument,
     search,
     refreshLocale,
+    fetchFromServer,
+    searchOnServer,
+    uploadToServer,
+    deleteFromServer,
   }
 })

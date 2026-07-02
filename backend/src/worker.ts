@@ -8,14 +8,31 @@ import { parserService } from './services/parser/parserService.js'
 import { deepseekService } from './services/deepseek/deepseekService.js'
 import { ragService } from './services/rag/ragService.js'
 import { modelService } from './services/model/modelService.js'
+import { getKnowledgeService, resetKnowledgeService } from './services/knowledge/knowledgeService.js'
 
-const app = new Hono()
+type Bindings = {
+  KNOWLEDGE_INDEX: any
+  KNOWLEDGE_DB: any
+  AI: any
+}
+
+const app = new Hono<{ Bindings: Bindings }>()
 
 // ─── CORS ──────────────────────────────────────────────────────────
 app.use('*', cors())
 
 // ─── JWT Secret ────────────────────────────────────────────────────
 const JWT_SECRET = 'rag-copilot-jwt-secret-2026-dev'
+
+// ─── Knowledge Service (lazy init with bindings) ───────────────────
+function initKnowledgeService(c: any) {
+  const env = c.env ?? {}
+  return getKnowledgeService({
+    aiBinding: env.AI,
+    vectorizeBinding: env.KNOWLEDGE_INDEX,
+    d1Binding: env.KNOWLEDGE_DB,
+  })
+}
 
 // ─── In-memory user store ──────────────────────────────────────────
 const userStore = new Map<string, User>()
@@ -248,7 +265,8 @@ app.post('/api/generate-listing', async (c) => {
       const content = data.choices[0]?.message?.content || '{}'
       const parsed = JSON.parse(content)
 
-      const complianceResults = ragService.checkCompliance(
+      const ks = initKnowledgeService(c)
+      const complianceResults = await ks.checkCompliance(
         [parsed.title, ...parsed.bulletPoints, parsed.description].join(' '),
         platform,
       )
@@ -278,7 +296,7 @@ app.post('/api/generate-listing', async (c) => {
   }
 })
 
-// POST /api/chat-listing - AI chat
+// POST /api/chat-listing - AI chat (SSE streaming)
 app.post('/api/chat-listing', async (c) => {
   try {
     const { messages, listingContext, providerId, apiKey, model, temperature, maxTokens } = await c.req.json()
@@ -295,33 +313,51 @@ app.post('/api/chat-listing', async (c) => {
       ? `You are an e-commerce listing optimization assistant. The user is working on the following listing:\n\nTitle: ${listingContext.title || 'N/A'}\nPlatform: ${listingContext.platform || 'N/A'}\nBullet Points: ${(listingContext.bulletPoints || []).join(' | ')}\nDescription: ${listingContext.description || 'N/A'}\nKeywords: ${(listingContext.keywords || []).join(', ')}\nSEO Score: ${listingContext.seoScore || 'N/A'}\n\nHelp the user refine and improve this listing. Be concise and specific. When suggesting changes, quote the original text and show the improved version.`
       : 'You are an e-commerce listing optimization assistant. Help the user create and refine product listings. Be concise and specific.'
 
-    const data = await modelService.callProviderAPI(
-      providerId || 'deepseek',
-      apiKey,
-      [
-        { role: 'system', content: systemMsg },
-        ...messages,
-      ],
-      { model, temperature, max_tokens: maxTokens },
-    )
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          for await (const chunk of modelService.callProviderAPIStream(
+            providerId || 'deepseek',
+            apiKey,
+            [
+              { role: 'system', content: systemMsg },
+              ...messages,
+            ],
+            { model, temperature, max_tokens: maxTokens },
+          )) {
+            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ type: 'chunk', content: chunk })}\n\n`))
+          }
 
-    if (!data) {
-      return c.json({ error: 'AI API error', code: 'ERR_AI_API' }, 502)
-    }
+          controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`))
+        } catch (err) {
+          console.error('[SSE Chat] Stream error:', err)
+          controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ type: 'error', message: 'Stream error' })}\n\n`))
+        } finally {
+          controller.close()
+        }
+      },
+    })
 
-    const reply = data.choices[0]?.message?.content || ''
-    return c.json({ reply, usage: data.usage })
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      },
+    })
   } catch (error) {
     console.error('Chat error:', error)
     return c.json({ error: 'Failed to process chat message', code: 'ERR_CHAT_FAILED' }, 500)
   }
 })
 
-// POST /api/check-compliance - Check compliance
+// POST /api/check-compliance - Check compliance (RAG enhanced)
 app.post('/api/check-compliance', async (c) => {
   try {
     const { text, platform } = await c.req.json()
-    const results = ragService.checkCompliance(text || '', platform)
+    const ks = initKnowledgeService(c)
+    const results = await ks.checkCompliance(text || '', platform)
     return c.json(results)
   } catch (error) {
     console.error('Compliance error:', error)
@@ -340,12 +376,150 @@ app.get('/api/templates', (c) => {
   return c.json({ templates })
 })
 
-// GET /api/knowledge/search - Search knowledge base
-app.get('/api/knowledge/search', (c) => {
-  const query = c.req.query('query') || ''
-  const platform = c.req.query('platform') || undefined
-  const docs = ragService.searchRelevantDocs(query, platform)
-  return c.json(docs)
+// ════════════════════════════════════════════════════════════════════
+// Knowledge Base routes (RAG)
+// ════════════════════════════════════════════════════════════════════
+
+// GET /api/knowledge/search - Semantic search
+app.get('/api/knowledge/search', async (c) => {
+  try {
+    const query = c.req.query('query') || ''
+    const platform = c.req.query('platform') || undefined
+    const ks = initKnowledgeService(c)
+    const results = await ks.searchKnowledge(query, { platform })
+    return c.json({ results })
+  } catch (error) {
+    console.error('Knowledge search error:', error)
+    return c.json({ error: 'Search failed', code: 'ERR_KNOWLEDGE_SEARCH' }, 500)
+  }
+})
+
+// GET /api/knowledge/documents - List documents
+app.get('/api/knowledge/documents', async (c) => {
+  try {
+    const category = c.req.query('category') || undefined
+    const platform = c.req.query('platform') || undefined
+    const ks = initKnowledgeService(c)
+    const documents = await ks.listDocuments(category, platform)
+    return c.json({ documents })
+  } catch (error) {
+    console.error('List documents error:', error)
+    return c.json({ error: 'Failed to list documents', code: 'ERR_KNOWLEDGE_LIST' }, 500)
+  }
+})
+
+// GET /api/knowledge/documents/:id - Get single document
+app.get('/api/knowledge/documents/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    const ks = initKnowledgeService(c)
+    const doc = await ks.getDocument(id)
+    if (!doc) return c.json({ error: 'Document not found', code: 'ERR_NOT_FOUND' }, 404)
+    return c.json({ document: doc })
+  } catch (error) {
+    console.error('Get document error:', error)
+    return c.json({ error: 'Failed to get document', code: 'ERR_KNOWLEDGE_GET' }, 500)
+  }
+})
+
+// POST /api/knowledge/upload - Upload & ingest document
+app.post('/api/knowledge/upload', async (c) => {
+  try {
+    const formData = await c.req.parseBody()
+    const file = formData['file'] as File | undefined
+    const title = (formData['title'] as string) || file?.name || 'Untitled'
+    const category = (formData['category'] as string) || 'platform_rules'
+    const platform = (formData['platform'] as string) || undefined
+    const tagsStr = (formData['tags'] as string) || '[]'
+
+    let content: string
+    if (file) {
+      const extension = file.name.split('.').pop()?.toLowerCase()
+      const buffer = await file.arrayBuffer()
+      if (extension === 'txt' || extension === 'md') {
+        content = new TextDecoder().decode(buffer)
+      } else if (extension === 'pdf') {
+        // Dynamic import for pdf-parse (not used in worker context currently)
+        try {
+          const pdfParse = (await import('pdf-parse')).default
+          const result = await pdfParse(Buffer.from(buffer))
+          content = result.text
+        } catch {
+          content = new TextDecoder().decode(buffer)
+        }
+      } else if (extension === 'docx') {
+        try {
+          const mammoth = (await import('mammoth')).default
+          const result = await mammoth.extractRawText({ buffer: Buffer.from(buffer) })
+          content = result.value
+        } catch {
+          return c.json({ error: `Failed to parse .${extension} file`, code: 'ERR_PARSE_DOC' }, 400)
+        }
+      } else {
+        return c.json({ error: `Unsupported file type: .${extension}`, code: 'ERR_UNSUPPORTED_FORMAT' }, 400)
+      }
+    } else if (formData['content']) {
+      content = formData['content'] as string
+    } else {
+      return c.json({ error: 'No file or content provided', code: 'ERR_NO_CONTENT' }, 400)
+    }
+
+    let tags: string[] = []
+    try { tags = JSON.parse(tagsStr) } catch { tags = tagsStr.split(',').map((t: string) => t.trim()).filter(Boolean) }
+
+    const ks = initKnowledgeService(c)
+    const doc = await ks.ingestDocument(content, {
+      title,
+      category: category as any,
+      platform: platform as any,
+      tags,
+      fileType: file?.name?.split('.').pop() ?? 'txt',
+      fileSize: file?.size ?? Buffer.byteLength(content, 'utf8'),
+    })
+
+    return c.json({ document: doc }, 201)
+  } catch (error) {
+    console.error('Knowledge upload error:', error)
+    return c.json({ error: 'Failed to upload document', code: 'ERR_KNOWLEDGE_UPLOAD' }, 500)
+  }
+})
+
+// DELETE /api/knowledge/documents/:id - Delete document
+app.delete('/api/knowledge/documents/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    const ks = initKnowledgeService(c)
+    await ks.deleteDocument(id)
+    return c.json({ success: true })
+  } catch (error) {
+    console.error('Delete document error:', error)
+    return c.json({ error: 'Failed to delete document', code: 'ERR_KNOWLEDGE_DELETE' }, 500)
+  }
+})
+
+// GET /api/knowledge/stats - Knowledge base statistics
+app.get('/api/knowledge/stats', async (c) => {
+  try {
+    const ks = initKnowledgeService(c)
+    const stats = await ks.getStats()
+    return c.json(stats)
+  } catch (error) {
+    console.error('Knowledge stats error:', error)
+    return c.json({ error: 'Failed to get stats', code: 'ERR_KNOWLEDGE_STATS' }, 500)
+  }
+})
+
+// POST /api/knowledge/seed - Seed knowledge base from local markdown files
+app.post('/api/knowledge/seed', async (c) => {
+  try {
+    // Dynamic import for seed (uses fs, only works in wrangler dev / Express)
+    const { seedKnowledgeBase } = await import('./services/knowledge/seed.js')
+    const count = await seedKnowledgeBase()
+    return c.json({ success: true, count })
+  } catch (error) {
+    console.error('Knowledge seed error:', error)
+    return c.json({ error: 'Seed failed (only available in dev mode)', code: 'ERR_KNOWLEDGE_SEED' }, 500)
+  }
 })
 
 // POST /api/export-listing - Export listing
@@ -473,7 +647,8 @@ app.post('/api/generate-listing/stream', async (c) => {
           }
 
           if (lastParse) {
-            const complianceResults = ragService.checkCompliance(
+            const ks = initKnowledgeService(c)
+            const complianceResults = await ks.checkCompliance(
               [lastParse.title || '', ...(lastParse.bulletPoints || []), lastParse.description || ''].join(' '),
               platform,
             )

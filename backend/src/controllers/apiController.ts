@@ -4,6 +4,7 @@ import { parserService } from '../services/parser/parserService.js'
 import { deepseekService } from '../services/deepseek/deepseekService.js'
 import { ragService } from '../services/rag/ragService.js'
 import { modelService } from '../services/model/modelService.js'
+import { getKnowledgeService, type KnowledgeService } from '../services/knowledge/knowledgeService.js'
 import type { Platform } from '../types/index.js'
 import type { JwtPayload } from '../types/auth.js'
 
@@ -13,6 +14,10 @@ const upload = multer({
 })
 
 const router = Router()
+
+function getKs(): KnowledgeService {
+  return getKnowledgeService() // Express: no Cloudflare bindings → local fallback
+}
 
 function isAdmin(req: Request): boolean {
   return ((req as any).user as JwtPayload)?.role === 'admin'
@@ -113,7 +118,8 @@ router.post('/generate-listing', async (req: Request, res: Response) => {
       const content = data.choices[0]?.message?.content || '{}'
       const parsed = JSON.parse(content)
 
-      const complianceResults = ragService.checkCompliance(
+      const ks = getKs()
+      const complianceResults = await ks.checkCompliance(
         [parsed.title, ...parsed.bulletPoints, parsed.description].join(' '),
         platform,
       )
@@ -143,7 +149,7 @@ router.post('/generate-listing', async (req: Request, res: Response) => {
   }
 })
 
-// POST /api/chat-listing - AI chat (admin only)
+// POST /api/chat-listing - AI chat (SSE streaming)
 // apiKey is passed from frontend per-request, NEVER stored on server
 router.post('/chat-listing', async (req: Request, res: Response) => {
   // Visitors cannot use chat
@@ -169,34 +175,45 @@ router.post('/chat-listing', async (req: Request, res: Response) => {
       ? `You are an e-commerce listing optimization assistant. The user is working on the following listing:\n\nTitle: ${listingContext.title || 'N/A'}\nPlatform: ${listingContext.platform || 'N/A'}\nBullet Points: ${(listingContext.bulletPoints || []).join(' | ')}\nDescription: ${listingContext.description || 'N/A'}\nKeywords: ${(listingContext.keywords || []).join(', ')}\nSEO Score: ${listingContext.seoScore || 'N/A'}\n\nHelp the user refine and improve this listing. Be concise and specific. When suggesting changes, quote the original text and show the improved version.`
       : 'You are an e-commerce listing optimization assistant. Help the user create and refine product listings. Be concise and specific.'
 
-    const data = await modelService.callProviderAPI(
-      providerId || 'deepseek',
-      apiKey,
-      [
-        { role: 'system', content: systemMsg },
-        ...messages,
-      ],
-      { model, temperature, max_tokens: maxTokens },
-    )
+    // Set SSE headers
+    res.setHeader('Content-Type', 'text/event-stream')
+    res.setHeader('Cache-Control', 'no-cache')
+    res.setHeader('Connection', 'keep-alive')
+    res.setHeader('X-Accel-Buffering', 'no')
+    res.flushHeaders()
 
-    if (!data) {
-      res.status(502).json({ error: 'AI API error', code: 'ERR_AI_API' })
-      return
+    try {
+      for await (const chunk of modelService.callProviderAPIStream(
+        providerId || 'deepseek',
+        apiKey,
+        [
+          { role: 'system', content: systemMsg },
+          ...messages,
+        ],
+        { model, temperature, max_tokens: maxTokens },
+      )) {
+        res.write(`data: ${JSON.stringify({ type: 'chunk', content: chunk })}\n\n`)
+      }
+
+      res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`)
+    } catch (err) {
+      console.error('[SSE Chat] Stream error:', err)
+      res.write(`data: ${JSON.stringify({ type: 'error', message: 'Stream error' })}\n\n`)
+    } finally {
+      res.end()
     }
-
-    const reply = data.choices[0]?.message?.content || ''
-    res.json({ reply, usage: data.usage })
   } catch (error) {
     console.error('Chat error:', error)
     res.status(500).json({ error: 'Failed to process chat message', code: 'ERR_CHAT_FAILED' })
   }
 })
 
-// POST /api/check-compliance - Check compliance
-router.post('/check-compliance', (req: Request, res: Response) => {
+// POST /api/check-compliance - Check compliance (RAG enhanced)
+router.post('/check-compliance', async (req: Request, res: Response) => {
   try {
     const { text, platform } = req.body
-    const results = ragService.checkCompliance(text || '', platform)
+    const ks = getKs()
+    const results = await ks.checkCompliance(text || '', platform)
     res.json(results)
   } catch (error) {
     console.error('Compliance error:', error)
@@ -301,7 +318,8 @@ router.post('/generate-listing/stream', async (req: Request, res: Response) => {
 
       // Final parse to get complete data
       if (lastParse) {
-        const complianceResults = ragService.checkCompliance(
+        const ks = getKs()
+        const complianceResults = await ks.checkCompliance(
           [lastParse.title || '', ...(lastParse.bulletPoints || []), lastParse.description || ''].join(' '),
           platform,
         )
@@ -351,14 +369,143 @@ router.get('/templates', (req: Request, res: Response) => {
   })
 })
 
-// GET /api/knowledge/search - Search knowledge base
-router.get('/knowledge/search', (req: Request, res: Response) => {
-  const { query, platform } = req.query
-  const docs = ragService.searchRelevantDocs(
-    (query as string) || '',
-    platform as string | undefined,
-  )
-  res.json(docs)
+// ════════════════════════════════════════════════════════════════════
+// Knowledge Base routes (RAG)
+// ════════════════════════════════════════════════════════════════════
+
+// GET /api/knowledge/search - Semantic search
+router.get('/knowledge/search', async (req: Request, res: Response) => {
+  try {
+    const { query, platform } = req.query
+    const ks = getKs()
+    const results = await ks.searchKnowledge((query as string) || '', {
+      platform: platform as string | undefined,
+    })
+    res.json({ results })
+  } catch (error) {
+    console.error('Knowledge search error:', error)
+    res.status(500).json({ error: 'Search failed', code: 'ERR_KNOWLEDGE_SEARCH' })
+  }
+})
+
+// GET /api/knowledge/documents - List documents
+router.get('/knowledge/documents', async (req: Request, res: Response) => {
+  try {
+    const { category, platform } = req.query
+    const ks = getKs()
+    const documents = await ks.listDocuments(
+      category as string | undefined,
+      platform as string | undefined,
+    )
+    res.json({ documents })
+  } catch (error) {
+    console.error('List documents error:', error)
+    res.status(500).json({ error: 'Failed to list documents', code: 'ERR_KNOWLEDGE_LIST' })
+  }
+})
+
+// GET /api/knowledge/documents/:id - Get single document
+router.get('/knowledge/documents/:id', async (req: Request, res: Response) => {
+  try {
+    const ks = getKs()
+    const doc = await ks.getDocument(req.params.id as string)
+    if (!doc) {
+      res.status(404).json({ error: 'Document not found', code: 'ERR_NOT_FOUND' })
+      return
+    }
+    res.json({ document: doc })
+  } catch (error) {
+    console.error('Get document error:', error)
+    res.status(500).json({ error: 'Failed to get document', code: 'ERR_KNOWLEDGE_GET' })
+  }
+})
+
+// POST /api/knowledge/upload - Upload & ingest document
+router.post('/knowledge/upload', upload.single('file'), async (req: Request, res: Response) => {
+  try {
+    const { title, category, platform, tags: tagsStr } = req.body
+    let content: string
+
+    if (req.file) {
+      const extension = req.file.originalname.split('.').pop()?.toLowerCase()
+      const buffer = req.file.buffer
+
+      if (extension === 'txt' || extension === 'md') {
+        content = buffer.toString('utf-8')
+      } else if (extension === 'pdf') {
+        try {
+          const pdfParse = (await import('pdf-parse')).default
+          const result = await pdfParse(buffer)
+          content = result.text
+        } catch {
+          content = buffer.toString('utf-8')
+        }
+      } else if (extension === 'docx') {
+        try {
+          const mammoth = (await import('mammoth')).default
+          const result = await mammoth.extractRawText({ buffer })
+          content = result.value
+        } catch {
+          res.status(400).json({ error: `Failed to parse .${extension} file`, code: 'ERR_PARSE_DOC' })
+          return
+        }
+      } else {
+        res.status(400).json({ error: `Unsupported file type: .${extension}`, code: 'ERR_UNSUPPORTED_FORMAT' })
+        return
+      }
+    } else if (req.body.content) {
+      content = req.body.content
+    } else {
+      res.status(400).json({ error: 'No file or content provided', code: 'ERR_NO_CONTENT' })
+      return
+    }
+
+    let tags: string[] = []
+    try {
+      tags = typeof tagsStr === 'string' ? JSON.parse(tagsStr) : (tagsStr || [])
+    } catch {
+      tags = (tagsStr || '').split(',').map((t: string) => t.trim()).filter(Boolean)
+    }
+
+    const ks = getKs()
+    const doc = await ks.ingestDocument(content, {
+      title: title || req.file?.originalname || 'Untitled',
+      category: category || 'platform_rules',
+      platform: platform || undefined,
+      tags,
+      fileType: req.file?.originalname?.split('.').pop() ?? 'txt',
+      fileSize: req.file?.size ?? Buffer.byteLength(content, 'utf8'),
+    })
+
+    res.status(201).json({ document: doc })
+  } catch (error) {
+    console.error('Knowledge upload error:', error)
+    res.status(500).json({ error: 'Failed to upload document', code: 'ERR_KNOWLEDGE_UPLOAD' })
+  }
+})
+
+// DELETE /api/knowledge/documents/:id - Delete document
+router.delete('/knowledge/documents/:id', async (req: Request, res: Response) => {
+  try {
+    const ks = getKs()
+    await ks.deleteDocument(req.params.id as string)
+    res.json({ success: true })
+  } catch (error) {
+    console.error('Delete document error:', error)
+    res.status(500).json({ error: 'Failed to delete document', code: 'ERR_KNOWLEDGE_DELETE' })
+  }
+})
+
+// GET /api/knowledge/stats - Knowledge base statistics
+router.get('/knowledge/stats', async (req: Request, res: Response) => {
+  try {
+    const ks = getKs()
+    const stats = await ks.getStats()
+    res.json(stats)
+  } catch (error) {
+    console.error('Knowledge stats error:', error)
+    res.status(500).json({ error: 'Failed to get stats', code: 'ERR_KNOWLEDGE_STATS' })
+  }
 })
 
 // POST /api/export-listing - Export listing

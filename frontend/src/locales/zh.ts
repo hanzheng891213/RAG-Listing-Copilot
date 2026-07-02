@@ -180,6 +180,13 @@ export default {
     file: '文件（演示可选）',
     dropFile: '拖放文件或点击浏览',
     uploaded: '文档已上传',
+    uploadedLocal: '文档已保存到本地',
+    uploadFailed: '上传失败',
+    uploading: '上传中...',
+    syncing: '同步中...',
+    synced: '已同步',
+    content: '内容（可选）',
+    contentPlaceholder: '如果不通过文件上传，请在此处粘贴文档内容',
     detail: {
       category: '分类',
       platform: '平台',

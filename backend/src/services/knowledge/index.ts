@@ -1,0 +1,6 @@
+export { chunkText, chunkMarkdown } from './chunker.js'
+export { createEmbedder, cosineSimilarity, LocalEmbedder, CloudflareEmbedder } from './embedder.js'
+export type { Embedder } from './embedder.js'
+export { createVectorStore, InMemoryVectorStore, CloudflareVectorStore } from './vectorStore.js'
+export type { VectorStore, VectorRecord, QueryResult } from './vectorStore.js'
+export { KnowledgeService, getKnowledgeService, resetKnowledgeService } from './knowledgeService.js'

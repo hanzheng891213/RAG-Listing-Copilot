@@ -10,6 +10,7 @@ export interface KnowledgeDocument {
   platform?: string
   fileType: string
   fileSize: number
+  chunkCount: number
   uploadedAt: string
   updatedAt: string
 }
@@ -17,5 +18,4 @@ export interface KnowledgeDocument {
 export interface SearchResult {
   document: KnowledgeDocument
   score: number
-  highlights: string[]
 }

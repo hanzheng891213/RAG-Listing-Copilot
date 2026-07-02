@@ -3,13 +3,26 @@ import { ref, computed } from 'vue'
 import { marked } from 'marked'
 import { useI18n } from 'vue-i18n'
 import type { GeneratedListing } from '@/types/listing'
+import { useTypewriter, useTypewriterList } from '@/composables/useTypewriter'
 
 const props = defineProps<{ listing: GeneratedListing }>()
 const { t } = useI18n()
 
 const activeTab = ref<'title' | 'bullets' | 'description'>('title')
 
-const renderedDescription = computed(() => marked.parse(props.listing.description))
+const { displayText: displayTitle } = useTypewriter(() => props.listing.title)
+const { displayItems: displayBullets } = useTypewriterList(() => props.listing.bulletPoints)
+const { displayText: displayDescription } = useTypewriter(() => props.listing.description, { speed: 15 })
+
+const renderedDescription = computed(() => marked.parse(displayDescription.value))
+
+const isTitleTyping = computed(() => displayTitle.value !== props.listing.title)
+const isBulletTyping = (i: number) => {
+  const full = props.listing.bulletPoints[i] ?? ''
+  const disp = displayBullets.value[i] ?? ''
+  return disp && disp.length < full.length
+}
+const isDescriptionTyping = computed(() => displayDescription.value !== props.listing.description)
 
 const tabKeys = { title: 'listing.tabs.title', bullets: 'listing.tabs.bullets', description: 'listing.tabs.description' } as const
 
@@ -26,7 +39,7 @@ async function copy(text: string) {
 
     <div v-if="activeTab === 'title'" class="preview-section">
       <div class="content-card">
-        <p class="listing-title">{{ listing.title }}</p>
+        <p class="listing-title">{{ displayTitle }}<span v-if="isTitleTyping" class="cursor-blink">|</span></p>
         <button class="copy-btn" @click="copy(listing.title)"><el-icon><CopyDocument /></el-icon></button>
       </div>
       <div class="title-stats">
@@ -37,16 +50,17 @@ async function copy(text: string) {
 
     <div v-if="activeTab === 'bullets'" class="preview-section">
       <ul class="bullet-list">
-        <li v-for="(bp, i) in listing.bulletPoints" :key="i" class="bullet-item">
+        <li v-for="(bp, i) in displayBullets" :key="i" class="bullet-item">
           <span class="bullet-num">{{ i + 1 }}</span>
-          <span class="bullet-text">{{ bp }}</span>
-          <button class="copy-btn" @click="copy(bp)"><el-icon><CopyDocument /></el-icon></button>
+          <span class="bullet-text">{{ bp }}<span v-if="isBulletTyping(i)" class="cursor-blink">|</span></span>
+          <button class="copy-btn" @click="copy(listing.bulletPoints[i])"><el-icon><CopyDocument /></el-icon></button>
         </li>
       </ul>
     </div>
 
     <div v-if="activeTab === 'description'" class="preview-section">
       <div class="description-content" v-html="renderedDescription" />
+      <span v-if="isDescriptionTyping" class="desc-cursor cursor-blink">|</span>
     </div>
   </div>
 </template>
@@ -83,4 +97,19 @@ async function copy(text: string) {
 .description-content :deep(th), .description-content :deep(td) { padding: 10px 14px; border: 1px solid var(--border-color); text-align: left; }
 .description-content :deep(th) { background: var(--bg-primary); font-weight: 600; font-size: 13px; }
 .description-content :deep(strong) { color: var(--accent-bright); }
+
+.cursor-blink {
+  animation: blink 1s step-end infinite;
+  color: var(--accent);
+  font-weight: 400;
+}
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.desc-cursor {
+  font-size: 14px;
+  line-height: 1.8;
+  margin-left: 2px;
+}
 </style>

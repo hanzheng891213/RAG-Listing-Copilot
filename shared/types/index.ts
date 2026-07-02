@@ -47,3 +47,47 @@ export interface SearchKnowledgeRequest {
   category?: string
   platform?: string
 }
+
+// ─── Knowledge Base Types ─────────────────────────────────────────
+
+export type KnowledgeCategory = 'platform_rules' | 'templates' | 'history'
+
+export interface KnowledgeDocument {
+  id: string
+  title: string
+  category: KnowledgeCategory
+  platform?: Platform
+  tags: string[]
+  content: string
+  fileType: string
+  fileSize: number
+  chunkCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface KnowledgeChunk {
+  id: string
+  documentId: string
+  content: string
+  chunkIndex: number
+  metadata: {
+    platform?: string
+    category: string
+    title: string
+  }
+}
+
+export interface KnowledgeSearchResult {
+  chunk: KnowledgeChunk
+  document: KnowledgeDocument
+  score: number
+}
+
+export interface IngestDocumentRequest {
+  title: string
+  category: KnowledgeCategory
+  platform?: Platform
+  tags: string[]
+  content?: string
+}

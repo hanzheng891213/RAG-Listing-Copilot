@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import type { KnowledgeDocument, KnowledgeCategory } from '@/types/knowledge'
+import type { KnowledgeCategory } from '@/types/knowledge'
 import { KNOWLEDGE_CATEGORIES, PLATFORMS } from '@/utils/constants'
 import { useKnowledgeStore } from '@/stores/knowledgeStore'
 
@@ -18,10 +18,12 @@ const form = ref({
   platform: '',
   tags: [] as string[],
   description: '',
+  content: '',
   file: null as File | null,
 })
 
 const tagInput = ref('')
+const isUploading = ref(false)
 
 function addTag() {
   const tag = tagInput.value.trim().toLowerCase()
@@ -38,26 +40,49 @@ function handleFileChange(file: File) {
   if (!form.value.title) form.value.title = file.name.replace(/\.[^/.]+$/, '')
 }
 
-function handleSubmit() {
+async function handleSubmit() {
   if (!form.value.title.trim()) {
     ElMessage.warning(t('knowledge.docTitleRequired'))
     return
   }
-  knowledgeStore.addDocument({
-    title: form.value.title.trim(),
-    category: form.value.category,
-    tags: form.value.tags,
-    excerpt: form.value.description.trim() || 'No description provided',
-    content: '',
-    platform: form.value.platform || undefined,
-    fileType: form.value.file?.name.split('.').pop() || 'txt',
-    fileSize: form.value.file?.size || 0,
-    uploadedAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  })
-  form.value = { title: '', category: 'platform_rules', platform: '', tags: [], description: '', file: null }
-  emit('update:visible', false)
-  ElMessage.success(t('knowledge.uploaded'))
+
+  isUploading.value = true
+  try {
+    const success = await knowledgeStore.uploadToServer({
+      title: form.value.title.trim(),
+      category: form.value.category,
+      platform: form.value.platform || undefined,
+      tags: form.value.tags,
+      content: form.value.content || form.value.description,
+      file: form.value.file || undefined,
+    })
+
+    if (success) {
+      ElMessage.success(t('knowledge.uploaded'))
+    } else {
+      // Fallback: add locally
+      knowledgeStore.addDocument({
+        title: form.value.title.trim(),
+        category: form.value.category,
+        tags: form.value.tags,
+        excerpt: form.value.description.trim() || form.value.content?.slice(0, 200) || '',
+        content: form.value.content || '',
+        platform: form.value.platform || undefined,
+        fileType: form.value.file?.name.split('.').pop() || 'txt',
+        fileSize: form.value.file?.size || 0,
+        chunkCount: 1,
+        uploadedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })
+      ElMessage.success(t('knowledge.uploadedLocal'))
+    }
+  } catch (err) {
+    ElMessage.error(t('knowledge.uploadFailed'))
+  } finally {
+    isUploading.value = false
+    form.value = { title: '', category: 'platform_rules', platform: '', tags: [], description: '', content: '', file: null }
+    emit('update:visible', false)
+  }
 }
 </script>
 
@@ -77,14 +102,15 @@ function handleSubmit() {
         <div class="tag-input-row"><el-input v-model="tagInput" :placeholder="t('knowledge.tagPlaceholder')" @keyup.enter="addTag" /><el-button @click="addTag" :disabled="!tagInput.trim()">{{ t('knowledge.addTag') }}</el-button></div>
         <div v-if="form.tags.length > 0" class="tag-list"><el-tag v-for="tag in form.tags" :key="tag" closable size="small" @close="removeTag(tag)">{{ tag }}</el-tag></div>
       </div>
-      <div class="form-field"><label>{{ t('knowledge.excerpt') }}</label><el-input v-model="form.description" type="textarea" :rows="3" :placeholder="t('knowledge.excerptPlaceholder')" /></div>
+      <div class="form-field"><label>{{ t('knowledge.excerpt') }}</label><el-input v-model="form.description" type="textarea" :rows="2" :placeholder="t('knowledge.excerptPlaceholder')" /></div>
+      <div class="form-field"><label>{{ t('knowledge.content') }}</label><el-input v-model="form.content" type="textarea" :rows="4" :placeholder="t('knowledge.contentPlaceholder')" /></div>
       <div class="form-field"><label>{{ t('knowledge.file') }}</label>
         <el-upload :auto-upload="false" :show-file-list="true" :limit="1" :on-change="(f: any) => handleFileChange(f.raw)" drag><el-icon><UploadFilled /></el-icon><span>{{ t('knowledge.dropFile') }}</span></el-upload>
       </div>
     </div>
     <template #footer>
       <el-button @click="emit('update:visible', false)">{{ t('common.cancel') }}</el-button>
-      <el-button type="primary" @click="handleSubmit">{{ t('common.upload') }}</el-button>
+      <el-button type="primary" :loading="isUploading" @click="handleSubmit">{{ isUploading ? t('knowledge.uploading') : t('common.upload') }}</el-button>
     </template>
   </el-dialog>
 </template>

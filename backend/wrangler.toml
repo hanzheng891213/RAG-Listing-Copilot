@@ -3,5 +3,27 @@ main = "src/worker.ts"
 compatibility_date = "2025-06-11"
 compatibility_flags = ["nodejs_compat"]
 
+# ─── AI Bindings (Workers AI for embeddings) ─────────────────────────
+[ai]
+binding = "AI"
+
+# ─── Vectorize Index (semantic search) ──────────────────────────────
+[[vectorize]]
+binding = "KNOWLEDGE_INDEX"
+index_name = "knowledge-chunks"
+
+# ─── D1 Database (document metadata) ─────────────────────────────────
+[[d1_databases]]
+binding = "KNOWLEDGE_DB"
+database_name = "knowledge-db"
+database_id = "knowledge-db-dev"
+
 [env.production]
 vars = { JWT_SECRET = "rag-copilot-jwt-secret-2026-dev" }
+
+[env.production.vectorize]
+binding = "KNOWLEDGE_INDEX"
+index_name = "knowledge-chunks-prod"
+
+[env.production.d1_databases]
+KNOWLEDGE_DB = { binding = "KNOWLEDGE_DB", database_name = "knowledge-db-prod", database_id = "knowledge-db-prod" }

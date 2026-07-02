@@ -136,6 +136,13 @@ export default {
     file: 'File (optional for demo)',
     dropFile: 'Drop file or click to browse',
     uploaded: 'Document uploaded',
+    uploadedLocal: 'Document saved locally',
+    uploadFailed: 'Upload failed',
+    uploading: 'Uploading...',
+    syncing: 'Syncing...',
+    synced: 'Synced',
+    content: 'Content (optional)',
+    contentPlaceholder: 'Paste document content here if not uploading a file',
     detail: {
       category: 'Category',
       platform: 'Platform',

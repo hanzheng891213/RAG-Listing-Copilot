@@ -82,6 +82,11 @@ watch(() => store.activeListing, () => {
     chat.clearMessages()
   }
 })
+
+// Auto-scroll as streaming content arrives
+watch(() => chat.messages[chat.messages.length - 1]?.content, () => {
+  if (chat.isStreaming) scrollToBottom()
+})
 </script>
 
 <template>
@@ -119,7 +124,7 @@ watch(() => store.activeListing, () => {
         </div>
       </div>
 
-      <div v-if="chat.isLoading" class="chat-loading">
+      <div v-if="chat.isLoading && !chat.isStreaming" class="chat-loading">
         <span class="dot-pulse" />
         <span>{{ t("chat.thinking") }}</span>
       </div>
