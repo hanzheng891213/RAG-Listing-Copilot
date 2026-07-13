@@ -15,15 +15,21 @@ index_name = "knowledge-chunks"
 # ─── D1 Database (document metadata) ─────────────────────────────────
 [[d1_databases]]
 binding = "KNOWLEDGE_DB"
-database_name = "knowledge-db"
-database_id = "knowledge-db-dev"
+database_name = "rag-listing-copilot"
+database_id = "2ab38a1a-72b5-4cc7-be75-eb1c07931ec6"
 
+# ─── Production Environment ─────────────────────────────────────────
 [env.production]
 vars = { JWT_SECRET = "rag-copilot-jwt-secret-2026-dev" }
 
-[env.production.vectorize]
+[env.production.ai]
+binding = "AI"
+
+[[env.production.vectorize]]
 binding = "KNOWLEDGE_INDEX"
 index_name = "knowledge-chunks-prod"
 
-[env.production.d1_databases]
-KNOWLEDGE_DB = { binding = "KNOWLEDGE_DB", database_name = "knowledge-db-prod", database_id = "knowledge-db-prod" }
+[[env.production.d1_databases]]
+binding = "KNOWLEDGE_DB"
+database_name = "rag-listing-copilot"
+database_id = "2ab38a1a-72b5-4cc7-be75-eb1c07931ec6"

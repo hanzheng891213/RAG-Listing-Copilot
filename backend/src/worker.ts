@@ -19,7 +19,12 @@ type Bindings = {
 const app = new Hono<{ Bindings: Bindings }>()
 
 // ─── CORS ──────────────────────────────────────────────────────────
-app.use('*', cors())
+app.use('*', cors({
+  origin: '*',
+  allowHeaders: ['Authorization', 'X-Active-Provider', 'Content-Type'],
+  allowMethods: ['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  maxAge: 86400,
+}))
 
 // ─── JWT Secret ────────────────────────────────────────────────────
 const JWT_SECRET = 'rag-copilot-jwt-secret-2026-dev'
