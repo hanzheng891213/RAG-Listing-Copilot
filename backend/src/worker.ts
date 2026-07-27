@@ -167,7 +167,7 @@ app.get('/api/models/usage/stats', (c) => {
 // ════════════════════════════════════════════════════════════════════
 
 // HEAD /api/upload-supplier - frontend endpoint detection
-app.head('/api/upload-supplier', (c) => c.body(null, 204))
+app.on('HEAD', '/api/upload-supplier', (c) => c.body(null, 204))
 
 // POST /api/upload-supplier - Upload and parse supplier file
 app.post('/api/upload-supplier', async (c) => {
