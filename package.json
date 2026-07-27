@@ -2,10 +2,17 @@
   "name": "RAG-Listing-Copilot",
   "private": true,
   "scripts": {
-    "postinstall": "cd frontend && npm ci && npm run build",
+    "postinstall": "cd backend && npm ci && cd ../frontend && npm ci",
     "build": "cd frontend && npm run build",
     "deploy": "npm run build && wrangler deploy",
     "preview": "wrangler dev"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "hono": "^4.12.25",
+    "jsonwebtoken": "^9.0.3",
+    "uuid": "^10.0.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "wrangler": "^4.96.0"

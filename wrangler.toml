@@ -1,5 +1,7 @@
 name = "rag-listing-copilot"
+main = "backend/src/worker.ts"
 compatibility_date = "2025-06-11"
+compatibility_flags = ["nodejs_compat"]
 
 [assets]
 directory = "./frontend/dist"
@@ -7,3 +9,18 @@ not_found_handling = "single-page-application"
 
 [build]
 command = "npm run build"
+
+[ai]
+binding = "AI"
+
+[[vectorize]]
+binding = "KNOWLEDGE_INDEX"
+index_name = "knowledge-chunks-prod"
+
+[[d1_databases]]
+binding = "KNOWLEDGE_DB"
+database_name = "rag-listing-copilot"
+database_id = "2ab38a1a-72b5-4cc7-be75-eb1c07931ec6"
+
+[vars]
+JWT_SECRET = "rag-copilot-jwt-secret-2026-dev"

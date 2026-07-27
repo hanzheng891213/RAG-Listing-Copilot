@@ -691,13 +691,6 @@ app.post('/api/generate-listing/stream', async (c) => {
 })
 
 // ════════════════════════════════════════════════════════════════════
-// 404 handler
-// ════════════════════════════════════════════════════════════════════
-app.notFound((c) => {
-  return c.json({ error: 'Not found', code: 'ERR_NOT_FOUND' }, 404)
-})
-
-// ════════════════════════════════════════════════════════════════════
 // Error handler
 // ════════════════════════════════════════════════════════════════════
 app.onError((err, c) => {
@@ -705,4 +698,13 @@ app.onError((err, c) => {
   return c.json({ error: 'Internal server error', code: 'ERR_INTERNAL' }, 500)
 })
 
-export default app
+// Worker + Assets: only handle API/health routes; everything else is static assets
+export default {
+  fetch: (request: Request, env: any, ctx: any) => {
+    const url = new URL(request.url)
+    if (url.pathname.startsWith('/api') || url.pathname === '/health' || url.pathname === '/') {
+      return app.fetch(request, env, ctx)
+    }
+    return env.ASSETS.fetch(request)
+  },
+}
