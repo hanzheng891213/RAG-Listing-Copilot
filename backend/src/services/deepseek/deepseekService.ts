@@ -1,11 +1,11 @@
-import type { SupplierProduct, GeneratedListing, Platform, ComplianceResult } from '../types/index.js'
-import { ragService } from '../rag/ragService.js'
+import type { SupplierProduct, GeneratedListing, Platform, ComplianceResult } from '../types/index.ts'
+import { ragService } from '../rag/ragService.ts'
 import { v4 as uuid } from 'uuid'
 
 const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1'
 
 function getProductLabel(product: SupplierProduct): string {
-  const values = Object.values(product.rawData).filter((v) => v)
+  const values = Object.values(product.rawData).filter((v): v is string => !!v)
   return values[0] || `Product ${product.id.slice(0, 6)}`
 }
 

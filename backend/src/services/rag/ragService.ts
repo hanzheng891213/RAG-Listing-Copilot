@@ -1,4 +1,4 @@
-import type { SupplierProduct } from '../types/index.js'
+import type { SupplierProduct } from '../types/index.ts'
 
 // In-memory knowledge base for demo
 const platformRules = [

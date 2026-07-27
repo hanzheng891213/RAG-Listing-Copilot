@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx'
-import type { SupplierProduct, ParseError } from '../types/index.js'
+import type { SupplierProduct, ParseError } from '../types/index.ts'
 import { v4 as uuid } from 'uuid'
 
 function isFieldName(value: string): boolean {
