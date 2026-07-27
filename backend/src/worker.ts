@@ -236,6 +236,7 @@ app.post('/api/generate-listing', async (c) => {
         (platform as Platform) || 'amazon',
         template || 'standard',
         undefined,
+        language,
       )
       return c.json(demoListing)
     }
@@ -444,22 +445,9 @@ app.post('/api/knowledge/upload', async (c) => {
       if (extension === 'txt' || extension === 'md') {
         content = new TextDecoder().decode(buffer)
       } else if (extension === 'pdf') {
-        // Dynamic import for pdf-parse (not used in worker context currently)
-        try {
-          const pdfParse = (await import('pdf-parse')).default
-          const result = await pdfParse(Buffer.from(buffer))
-          content = result.text
-        } catch {
-          content = new TextDecoder().decode(buffer)
-        }
+        content = new TextDecoder().decode(buffer)
       } else if (extension === 'docx') {
-        try {
-          const mammoth = (await import('mammoth')).default
-          const result = await mammoth.extractRawText({ buffer: Buffer.from(buffer) })
-          content = result.value
-        } catch {
-          return c.json({ error: `Failed to parse .${extension} file`, code: 'ERR_PARSE_DOC' }, 400)
-        }
+        return c.json({ error: `Parsing .docx files is not supported in this environment`, code: 'ERR_PARSE_DOC' }, 400)
       } else {
         return c.json({ error: `Unsupported file type: .${extension}`, code: 'ERR_UNSUPPORTED_FORMAT' }, 400)
       }

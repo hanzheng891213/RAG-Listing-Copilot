@@ -3,6 +3,7 @@ import cors from 'cors'
 import apiController from './controllers/apiController.js'
 import authController from './controllers/authController.js'
 import modelController from './controllers/modelController.js'
+import knowledgeController from './controllers/knowledgeController.js'
 import { requireAuth, requireAdmin, checkApiUsage } from './middleware/authMiddleware.js'
 import { rateLimiter } from './middleware/rateLimiter.js'
 import { seedKnowledgeBase } from './services/knowledge/seed.js'
@@ -61,6 +62,9 @@ app.use('/api/auth', authController)
 
 // Model routes — require auth + admin
 app.use('/api/models', requireAuth, requireAdmin, modelController)
+
+// Knowledge base routes — public access (no auth required)
+app.use('/api/knowledge', knowledgeController)
 
 // API routes — require auth and track usage
 app.use('/api', rateLimiter({ windowMs: 60_000, max: 60 }), requireAuth, checkApiUsage, apiController)

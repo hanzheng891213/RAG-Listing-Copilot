@@ -26,6 +26,32 @@ function navigate(path: string) {
   router.push(path)
   emit('nav')
 }
+
+// ── 路由预加载：hover 导航项时预取组件资源 ──────────────────────────
+const prefetchTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+function onNavHover(path: string) {
+  if (path === route.path) return
+  // 延迟 200ms 后预加载，避免快速划过时触发
+  const timer = setTimeout(() => {
+    const routeRecord = router.getRoutes().find((r) => r.path === path)
+    if (routeRecord?.components?.default) {
+      const comp = routeRecord.components.default as Function
+      // 调用动态 import 进行预加载
+      comp()
+    }
+    prefetchTimers.delete(path)
+  }, 200)
+  prefetchTimers.set(path, timer)
+}
+
+function onNavLeave(path: string) {
+  const timer = prefetchTimers.get(path)
+  if (timer) {
+    clearTimeout(timer)
+    prefetchTimers.delete(path)
+  }
+}
 </script>
 
 <template>
@@ -45,6 +71,8 @@ function navigate(path: string) {
         :class="{ active: isActive(item.path) }"
         :title="collapsed ? t(item.labelKey) : ''"
         @click="navigate(item.path)"
+        @mouseenter="onNavHover(item.path)"
+        @mouseleave="onNavLeave(item.path)"
       >
         <el-icon class="nav-icon"><component :is="item.icon" /></el-icon>
         <span v-show="!collapsed" class="nav-label">{{ t(item.labelKey) }}</span>

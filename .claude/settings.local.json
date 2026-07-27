@@ -46,7 +46,15 @@
       "WebFetch(domain:www.amazonsellers.attorney)",
       "WebFetch(domain:gobrandwoven.com)",
       "Bash(python3 -m json.tool)",
-      "Bash(npx kill-port *)"
+      "Bash(npx kill-port *)",
+      "Bash(npx wrangler *)",
+      "WebFetch(domain:rag-listing-copilot-api-production.hanzheng891213.workers.dev)",
+      "PowerShell(Invoke-RestMethod -Uri \"https://rag-listing-copilot-api-production.hanzheng891213.workers.dev/health\" -Method Get -TimeoutSec 15)",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"https://rag-listing-copilot-api-production.hanzheng891213.workers.dev/health\" -TimeoutSec 15 -UseBasicParsing; Write-Host \"Status:\" $r.StatusCode; Write-Host \"Body:\" $r.Content } catch { Write-Host \"Error:\" $_.Exception.Message })",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"https://99e72fac.rag-listing-copilot.pages.dev\" -TimeoutSec 15 -UseBasicParsing; Write-Host \"Status:\" $r.StatusCode; Write-Host \"Content length:\" $r.Content.Length } catch { Write-Host \"Error:\" $_.Exception.Message })",
+      "PowerShell(try { $body = @{username=\"hanzheng891213@gmail.com\";password=\"admin123\"} | ConvertTo-Json; $r = Invoke-WebRequest -Uri \"https://rag-listing-copilot-api-production.hanzheng891213.workers.dev/api/auth/login\" -Method Post -Body $body -ContentType \"application/json\" -TimeoutSec 15 -UseBasicParsing; Write-Host \"Status:\" $r.StatusCode; Write-Host \"Body:\" $r.Content } catch { Write-Host \"Error:\" $_.Exception.Message; if \\($_.Exception.Response\\) { $reader = New-Object System.IO.StreamReader\\($_.Exception.Response.GetResponseStream\\(\\)\\); Write-Host \"Response:\" $reader.ReadToEnd\\(\\) } })",
+      "PowerShell(try { $body = @{username=\"hanzheng891213@gmail.com\";password=\"handsandblog@110\"} | ConvertTo-Json; $r = Invoke-WebRequest -Uri \"https://rag-listing-copilot-api-production.hanzheng891213.workers.dev/api/auth/login\" -Method Post -Body $body -ContentType \"application/json\" -TimeoutSec 15 -UseBasicParsing; Write-Host \"Status:\" $r.StatusCode; Write-Host \"Body:\" $r.Content } catch { Write-Host \"Error:\" $_.Exception.Message })",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"https://rag-listing-copilot-api-production.hanzheng891213.workers.dev/api/auth/login\" -Method Options -Headers @{\"Origin\"=\"https://rag-listing-copilot.pages.dev\";\"Access-Control-Request-Method\"=\"POST\";\"Access-Control-Request-Headers\"=\"Authorization,Content-Type\"} -TimeoutSec 15 -UseBasicParsing; Write-Host \"Status:\" $r.StatusCode; Write-Host \"Allow-Origin:\" $r.Headers[\"Access-Control-Allow-Origin\"]; Write-Host \"Allow-Methods:\" $r.Headers[\"Access-Control-Allow-Methods\"]; Write-Host \"Allow-Headers:\" $r.Headers[\"Access-Control-Allow-Headers\"] } catch { Write-Host \"Error:\" $_.Exception.Message })"
     ]
   }
 }

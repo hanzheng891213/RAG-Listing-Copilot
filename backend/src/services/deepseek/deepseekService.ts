@@ -15,11 +15,12 @@ export class DeepSeekService {
     platform: Platform,
     template: string,
     apiKey?: string,
+    language?: string,
   ): Promise<GeneratedListing> {
     const label = getProductLabel(product)
     const relevantDocs = ragService.searchRelevantDocs(label, platform)
 
-    const prompt = this.buildPrompt(product, platform, template, relevantDocs)
+    const prompt = this.buildPrompt(product, platform, template, relevantDocs, language)
 
     const key = apiKey || process.env.DEEPSEEK_API_KEY || ''
 
@@ -29,7 +30,7 @@ export class DeepSeekService {
     }
 
     console.log('[DeepSeek] No API key configured, using demo mode')
-    return this.generateDemoListing(product, platform, template)
+    return this.generateDemoListing(product, platform, template, language)
   }
 
   buildPromptForProvider(
@@ -142,31 +143,47 @@ Respond in JSON format:
     product: SupplierProduct,
     platform: Platform,
     template: string,
+    language?: string,
   ): GeneratedListing {
     const label = getProductLabel(product)
     const complianceResults = ragService.checkCompliance(label, platform)
+    const isNonEnglish = language && language !== 'english'
+
+    const title = isNonEnglish
+      ? `高级${label} - 高品质 | 快速发货 | 最佳价值`
+      : `Premium ${label} - High Quality | Fast Shipping | Best Value`
+
+    const bulletPoints = isNonEnglish
+      ? [
+          `【优质品质】专业级 ${label}，采用耐用材料制成，性能稳定可靠。`,
+          `【多功能设计】符合人体工学设计，适合家庭、办公室和户外活动。`,
+          `【易于使用】简单设置，直观控制，无需专业技术知识，几分钟即可上手。`,
+          `【完美礼物】精美包装，是送给家人、朋友和同事的理想礼物。`,
+          `【100%满意保证】30天无条件退款保证和专业客服支持。`,
+        ]
+      : [
+          `【Premium Quality】Professional-grade ${label} crafted with durable materials for long-lasting performance and reliability.`,
+          `【Versatile Design】Ergonomically designed for everyday use, suitable for home, office, and outdoor activities.`,
+          `【Easy to Use】Simple setup with intuitive controls - no technical expertise required. Get started in minutes.`,
+          `【Perfect Gift Choice】Elegant packaging makes it an ideal present for family, friends, and colleagues on any occasion.`,
+          `【100% Satisfaction Guarantee】Backed by our 30-day money-back guarantee and responsive customer support team.`,
+        ]
+
+    const description = isNonEnglish
+      ? `## 产品描述\n\n体验 ${label} 品质与价值的完美结合。精心设计，注重细节，为您带来卓越的性能体验。\n\n### 主要特点\n\n- **优质工艺**：采用高级材料制造\n- **现代设计**：时尚外观，适合各种场景\n- **稳定可靠**：始终如一的品质保障\n- **易于维护**：简单的清洁和保养说明\n\n### 包装内含\n\n1x ${label}\n1x 用户手册\n1x 配件包`
+      : `## Product Description\n\nExperience the perfect blend of quality and value with our ${label}. Designed with attention to detail, this product delivers exceptional performance for all your needs.\n\n### Key Features\n\n- **Superior Build**: Manufactured using premium-grade materials\n- **Modern Design**: Sleek aesthetics that complement any setting\n- **Reliable Performance**: Consistent quality you can count on\n- **Easy Maintenance**: Simple cleaning and care instructions\n\n### What's Included\n\n1x ${label}\n1x User Manual\n1x Accessory Kit`
+
+    const keywords = isNonEnglish
+      ? [label.toLowerCase(), '高级品质', '快速发货', '最佳价值', '专业级', '耐用']
+      : [label.toLowerCase(), 'premium quality', 'fast shipping', 'best value', 'professional grade', 'durable', 'satisfaction guarantee']
 
     return {
       id: uuid(),
       productId: product.id,
-      title: `Premium ${label} - High Quality | Fast Shipping | Best Value`,
-      bulletPoints: [
-        `【Premium Quality】Professional-grade ${label} crafted with durable materials for long-lasting performance and reliability.`,
-        `【Versatile Design】Ergonomically designed for everyday use, suitable for home, office, and outdoor activities.`,
-        `【Easy to Use】Simple setup with intuitive controls - no technical expertise required. Get started in minutes.`,
-        `【Perfect Gift Choice】Elegant packaging makes it an ideal present for family, friends, and colleagues on any occasion.`,
-        `【100% Satisfaction Guarantee】Backed by our 30-day money-back guarantee and responsive customer support team.`,
-      ],
-      description: `## Product Description\n\nExperience the perfect blend of quality and value with our ${label}. Designed with attention to detail, this product delivers exceptional performance for all your needs.\n\n### Key Features\n\n- **Superior Build**: Manufactured using premium-grade materials\n- **Modern Design**: Sleek aesthetics that complement any setting\n- **Reliable Performance**: Consistent quality you can count on\n- **Easy Maintenance**: Simple cleaning and care instructions\n\n### What's Included\n\n1x ${label}\n1x User Manual\n1x Accessory Kit`,
-      keywords: [
-        label.toLowerCase(),
-        'premium quality',
-        'fast shipping',
-        'best value',
-        'professional grade',
-        'durable',
-        'satisfaction guarantee',
-      ],
+      title,
+      bulletPoints,
+      description,
+      keywords,
       seoScore: 87,
       complianceResults,
       platform,

@@ -150,3 +150,6 @@ POST /api/export-listing   // 导出Listing
 2. 结构化数据 + 关键词 → 知识库检索 → 相关文档
 3. 商品信息 + 相关文档 → 提示词工程 → DeepSeek API
 4. DeepSeek响应 → 后处理 → 合规检查 → 最终Listing
+
+主创：韩政
+共创：

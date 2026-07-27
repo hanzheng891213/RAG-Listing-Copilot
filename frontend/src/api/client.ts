@@ -10,6 +10,23 @@ const client = axios.create({
   },
 })
 
+// ─── Request deduplication cache ──────────────────────────────────────
+// 同一 GET 请求在飞行中时后续调用自动复用同一个 Promise
+const inflightGetCache = new Map<string, Promise<any>>()
+// 备份原始 get 方法
+const _clientGet = client.get.bind(client)
+client.get = function <T = any>(url: string, config?: any): Promise<T> {
+  const key = `${url}:${JSON.stringify(config?.params || '')}`
+  const existing = inflightGetCache.get(key)
+  if (existing) return existing as Promise<T>
+  const promise = _clientGet(url, config).finally(() => {
+    inflightGetCache.delete(key)
+  }) as Promise<T>
+  inflightGetCache.set(key, promise)
+  return promise
+} as typeof client.get
+
+// ─── Request interceptor: attach auth headers ─────────────────────────
 client.interceptors.request.use((config) => {
   try {
     const token = localStorage.getItem('rag-copilot-token')
@@ -26,11 +43,13 @@ client.interceptors.request.use((config) => {
   return config
 })
 
+// ─── Response interceptors ────────────────────────────────────────────
+
+// Interceptor 1: 401 → clear token
 client.interceptors.response.use(
   (response) => response,
   async (error) => {
-    // On 401, clear the stored token
-    if (error.response?.status === 401) {
+    if (error?.response?.status === 401) {
       try {
         localStorage.removeItem('rag-copilot-token')
       } catch { /* ignore */ }
@@ -39,11 +58,14 @@ client.interceptors.response.use(
   },
 )
 
+// Interceptor 2: error localization
 client.interceptors.response.use(
-  (response) => response.data,
+  (response) => {
+    return response.data
+  },
   (error) => {
-    const code = error.response?.data?.code
     const rawMessage = error.response?.data?.error || error.message || 'Request failed'
+    const code = error.response?.data?.code
 
     // Map error code to localized message
     let message = rawMessage

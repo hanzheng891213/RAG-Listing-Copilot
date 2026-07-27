@@ -1,13 +1,35 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { ref, watch, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { marked } from 'marked'
 import { useKnowledgeBase } from '@/composables/useKnowledgeBase'
+import { useDebounce } from '@/composables/useDebounce'
 import { KNOWLEDGE_CATEGORIES, PLATFORMS } from '@/utils/constants'
 import DocumentCard from '@/components/knowledge/DocumentCard.vue'
 import DocumentUploadDialog from '@/components/knowledge/DocumentUploadDialog.vue'
 
 const { t } = useI18n()
-const { store, uploadDialogVisible, viewDocument, selectedDoc, detailVisible, formatDocDate } = useKnowledgeBase()
+const { store, uploadDialogVisible, viewDocument, selectedDoc, detailVisible, contentLoading, formatDocDate } = useKnowledgeBase()
+
+function renderMarkdown(content: string): string {
+  if (!content) return ''
+  try {
+    return marked.parse(content, { async: false }) as string
+  } catch {
+    return content
+  }
+}
+
+onMounted(() => {
+  store.fetchFromServer()
+})
+
+// ── 防抖搜索：输入停顿 300ms 后才更新 store，避免频繁过滤 ──
+const searchInput = ref('')
+const debouncedSearch = useDebounce(searchInput, 300)
+watch(debouncedSearch, (val) => {
+  store.searchQuery = val
+})
 
 onMounted(() => {
   store.fetchFromServer()
@@ -47,7 +69,7 @@ const tabKeys: Record<string, string> = {
 
     <div class="toolbar">
       <div class="search-bar">
-        <el-input v-model="store.searchQuery" :placeholder="t('knowledge.searchPlaceholder')" clearable size="large">
+        <el-input v-model="searchInput" :placeholder="t('knowledge.searchPlaceholder')" clearable size="large">
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
       </div>
@@ -76,7 +98,7 @@ const tabKeys: Record<string, string> = {
 
     <DocumentUploadDialog v-model:visible="uploadDialogVisible" />
 
-    <el-dialog v-if="selectedDoc" v-model="detailVisible" :title="selectedDoc.title" width="720px" destroy-on-close>
+    <el-dialog v-if="selectedDoc" v-model="detailVisible" :title="selectedDoc.title" width="800px" destroy-on-close top="5vh">
       <div class="doc-detail">
         <div class="doc-meta">
           <el-tag :type="categoryTagTypes[selectedDoc.category]" size="small">{{ t(tabKeys[selectedDoc.category]) }}</el-tag>
@@ -86,7 +108,11 @@ const tabKeys: Record<string, string> = {
         <div class="doc-tags">
           <el-tag v-for="tag in selectedDoc.tags" :key="tag" size="small" effect="plain">{{ tag }}</el-tag>
         </div>
-        <div class="doc-body"><p>{{ selectedDoc.excerpt }}</p></div>
+        <div v-if="contentLoading" class="doc-loading">
+          <el-icon class="spin"><Loading /></el-icon>
+          <span>加载文档内容...</span>
+        </div>
+        <div v-else class="doc-body" v-html="renderMarkdown(selectedDoc.content || selectedDoc.excerpt)" />
         <div class="doc-file-info">
           <el-icon><Document /></el-icon>
           <span>{{ selectedDoc.fileType.toUpperCase() }}</span><span>·</span>
@@ -124,7 +150,25 @@ const tabKeys: Record<string, string> = {
 .doc-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .doc-date { font-size: 13px; color: var(--text-muted); }
 .doc-tags { display: flex; gap: 6px; flex-wrap: wrap; }
-.doc-body { background: var(--bg-secondary); border-radius: var(--radius-md); padding: 20px; font-size: 14px; line-height: 1.8; color: var(--text-primary); }
+.doc-body { background: var(--bg-secondary); border-radius: var(--radius-md); padding: 24px; font-size: 14px; line-height: 1.8; color: var(--text-primary); max-height: 60vh; overflow-y: auto; }
+.doc-body h1, .doc-body h2, .doc-body h3 { margin: 1.2em 0 0.6em; }
+.doc-body h1 { font-size: 22px; }
+.doc-body h2 { font-size: 18px; border-bottom: 1px solid var(--border-color); padding-bottom: 6px; }
+.doc-body h3 { font-size: 16px; }
+.doc-body p { margin: 0.6em 0; }
+.doc-body table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13px; }
+.doc-body th, .doc-body td { border: 1px solid var(--border-color); padding: 8px 12px; text-align: left; }
+.doc-body th { background: var(--bg-card); font-weight: 600; }
+.doc-body code { background: var(--bg-card); padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+.doc-body pre { background: var(--bg-card); padding: 16px; border-radius: var(--radius-md); overflow-x: auto; }
+.doc-body ul, .doc-body ol { padding-left: 24px; margin: 8px 0; }
+.doc-body li { margin: 4px 0; }
+.doc-body blockquote { border-left: 3px solid var(--accent-dim); padding-left: 16px; margin: 12px 0; color: var(--text-secondary); }
+.doc-body a { color: var(--accent); text-decoration: underline; }
+.doc-body hr { border: none; border-top: 1px solid var(--border-color); margin: 20px 0; }
+.doc-loading { display: flex; align-items: center; gap: 10px; padding: 40px; justify-content: center; color: var(--text-muted); }
+.spin { animation: spin 1s linear infinite; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .doc-file-info { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-muted); }
 @media (max-width: 768px) { .page-header { flex-direction: column; } .tabs { overflow-x: auto; } .tab { padding: 10px 16px; white-space: nowrap; } .doc-grid { grid-template-columns: 1fr; } }
 </style>

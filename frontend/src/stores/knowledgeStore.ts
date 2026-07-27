@@ -136,21 +136,43 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     searchQuery.value = q
   }
 
+  function updateDocumentContent(id: string, content: string) {
+    const doc = documents.value.find((d) => d.id === id)
+    if (doc) doc.content = content
+  }
+
   // ── Server sync ──────────────────────────────────────────────────
 
   async function fetchFromServer() {
     isLoading.value = true
     try {
       const res = await listDocuments()
-      const serverDocs = res.data.documents.map((d: any) => ({
+      const serverDocs = (res.documents ?? []).map((d: any) => ({
         ...d,
         excerpt: d.content?.slice(0, 200) ?? '',
         uploadedAt: d.createdAt ?? d.uploadedAt,
         chunkCount: d.chunkCount ?? 1,
       }))
-      // Merge: keep seed docs, add server docs
-      const userDocs = documents.value.filter((d) => !SEED_IDS.includes(d.id))
-      documents.value = [...serverDocs, ...userDocs]
+
+      const updatedDocs = documents.value.map((localDoc) => {
+        const serverDoc = serverDocs.find((sd: any) => sd.title === localDoc.title)
+        if (serverDoc) {
+          return {
+            ...localDoc,
+            content: serverDoc.content ?? localDoc.content,
+            chunkCount: serverDoc.chunkCount ?? localDoc.chunkCount,
+            uploadedAt: serverDoc.uploadedAt ?? localDoc.uploadedAt,
+            updatedAt: serverDoc.updatedAt ?? localDoc.updatedAt,
+          }
+        }
+        return localDoc
+      })
+
+      const serverDocTitles = new Set(serverDocs.map((sd: any) => sd.title))
+      const localDocTitles = new Set(documents.value.map((d) => d.title))
+      const newServerDocs = serverDocs.filter((sd: any) => !localDocTitles.has(sd.title))
+
+      documents.value = [...updatedDocs, ...newServerDocs]
       serverAvailable.value = true
     } catch {
       // Server not available, keep local data
@@ -163,7 +185,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     isSearching.value = true
     try {
       const res = await searchKnowledge(q, platform)
-      results.value = (res.data.results ?? []).map((r: any) => ({
+      results.value = (res.results ?? []).map((r: any) => ({
         document: {
           ...r.document,
           excerpt: r.document.content?.slice(0, 200) ?? r.document.excerpt ?? '',
@@ -235,6 +257,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     addDocument,
     removeDocument,
     search,
+    updateDocumentContent,
     refreshLocale,
     fetchFromServer,
     searchOnServer,

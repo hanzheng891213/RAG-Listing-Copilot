@@ -81,6 +81,7 @@ router.post('/generate-listing', async (req: Request, res: Response) => {
         (platform as Platform) || 'amazon',
         template || 'standard',
         undefined, // no apiKey → demo
+        language,
       )
       res.json(demoListing)
       return

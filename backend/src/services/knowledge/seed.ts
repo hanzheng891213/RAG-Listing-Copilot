@@ -25,34 +25,34 @@ interface SeedDoc {
 
 const SEED_METADATA: Record<string, Omit<SeedDoc, 'content'>> = {
   '01-selling-policies-code-of-conduct': {
-    title: 'Amazon Selling Policies & Seller Code of Conduct',
+    title: '亚马逊销售政策与卖家行为准则',
     category: 'platform_rules',
     platform: 'amazon',
-    tags: ['amazon', 'code-of-conduct', 'selling-policies', 'business-solutions-agreement'],
+    tags: ['亚马逊', '行为准则', '合规'],
   },
   '02-prohibited-restricted-products': {
-    title: 'Amazon Prohibited & Restricted Products Policy',
+    title: '亚马逊禁售与受限商品政策',
     category: 'platform_rules',
     platform: 'amazon',
-    tags: ['amazon', 'prohibited', 'restricted', 'gated-categories', 'ungating'],
+    tags: ['亚马逊', '受限', '合规'],
   },
   '03-product-detail-page-rules': {
-    title: 'Amazon Product Detail Page Rules',
+    title: '亚马逊商品详情页规则',
     category: 'platform_rules',
     platform: 'amazon',
-    tags: ['amazon', 'detail-page', 'title', 'image', 'bullet-points', 'variation'],
+    tags: ['亚马逊', '上架', '详情页'],
   },
   '04-product-safety-compliance': {
-    title: 'Amazon Product Safety & Compliance Certifications',
+    title: '产品安全与合规认证',
     category: 'platform_rules',
     platform: 'amazon',
-    tags: ['amazon', 'safety', 'compliance', 'FDA', 'CPC', 'CE', 'FCC', 'certification'],
+    tags: ['合规', '安全', '认证'],
   },
   '05-category-listing-restrictions': {
-    title: 'Amazon Category Listing Restrictions & Approval',
+    title: '品类准入与分类审核',
     category: 'platform_rules',
     platform: 'amazon',
-    tags: ['amazon', 'categories', 'gated', 'jewelry', 'beauty', 'baby', 'automotive', 'approval'],
+    tags: ['品类', '受限', '批准'],
   },
 }
 
