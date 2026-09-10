@@ -20,11 +20,11 @@ export interface SeedProgress {
 
 /**
  * Documents per call when the caller doesn't specify. Every chunk costs one
- * embedding request plus one vector upsert, so a 10-chunk document is ~11
- * outbound subrequests. A Worker request has a hard subrequest cap, and
- * ingesting the whole backlog at once blows through it partway.
+ * embedding request plus one vector upsert, so a Worker request has a hard
+ * subrequest cap. The English bodies chunk to roughly 22 pieces each, so two
+ * per call already brushed against the cap and left documents half-ingested.
  */
-export const DEFAULT_SEED_BATCH = 2
+export const DEFAULT_SEED_BATCH = 1
 
 /**
  * Ingest seed documents that aren't already present, matched by title, so
