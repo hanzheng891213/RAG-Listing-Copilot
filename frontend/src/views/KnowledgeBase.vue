@@ -4,11 +4,13 @@ import { useI18n } from 'vue-i18n'
 import { marked } from 'marked'
 import { useKnowledgeBase } from '@/composables/useKnowledgeBase'
 import { useDebounce } from '@/composables/useDebounce'
+import { useAuthStore } from '@/stores/authStore'
 import { KNOWLEDGE_CATEGORIES, PLATFORMS } from '@/utils/constants'
 import DocumentCard from '@/components/knowledge/DocumentCard.vue'
 import DocumentUploadDialog from '@/components/knowledge/DocumentUploadDialog.vue'
 
 const { t } = useI18n()
+const auth = useAuthStore()
 const { store, uploadDialogVisible, viewDocument, selectedDoc, detailVisible, contentLoading, formatDocDate } = useKnowledgeBase()
 
 function renderMarkdown(content: string): string {
@@ -60,7 +62,7 @@ const tabKeys: Record<string, string> = {
         <span v-else-if="store.serverAvailable" class="sync-indicator synced">
           <el-icon><CircleCheck /></el-icon> {{ t('knowledge.synced') }}
         </span>
-        <el-button type="primary" @click="uploadDialogVisible = true">
+        <el-button v-if="auth.isAdmin" type="primary" @click="uploadDialogVisible = true">
           <el-icon><Upload /></el-icon>
           {{ t('knowledge.uploadDoc') }}
         </el-button>
@@ -86,7 +88,7 @@ const tabKeys: Record<string, string> = {
     </div>
 
     <div v-if="store.filteredDocuments.length > 0" class="doc-grid">
-      <DocumentCard v-for="doc in store.filteredDocuments" :key="doc.id" :document="doc" @click="viewDocument(doc)" @delete="store.removeDocument(doc.id)" />
+      <DocumentCard v-for="doc in store.filteredDocuments" :key="doc.id" :document="doc" :can-delete="auth.isAdmin" @click="viewDocument(doc)" @delete="store.removeDocument(doc.id)" />
     </div>
 
     <div v-else class="empty-state">

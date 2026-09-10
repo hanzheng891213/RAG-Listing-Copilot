@@ -6,7 +6,7 @@ import { formatFileSize, truncate } from '@/utils/formatters'
 import dayjs from 'dayjs'
 import ConfirmButton from '@/components/common/ConfirmButton.vue'
 
-const props = defineProps<{ document: KnowledgeDocument }>()
+const props = defineProps<{ document: KnowledgeDocument; canDelete?: boolean }>()
 defineEmits<{ click: []; delete: [] }>()
 
 const { t, locale } = useI18n()
@@ -78,6 +78,7 @@ const formattedDate = computed(() => {
       <span class="doc-meta">·</span>
       <span class="doc-meta">{{ formattedDate }}</span>
       <ConfirmButton
+        v-if="canDelete"
         class="delete-btn"
         text
         size="small"
