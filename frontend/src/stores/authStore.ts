@@ -120,14 +120,25 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  let refreshPromise: Promise<void> | null = null
+
   async function refreshUser() {
     if (!token.value) return
-    try {
-      user.value = await fetchMe()
-    } catch {
-      // Token expired or invalid
-      logout()
+    // Reuse the in-flight request so the router guard and the store-init
+    // auto-refresh never issue duplicate fetchMe() calls.
+    if (!refreshPromise) {
+      refreshPromise = (async () => {
+        try {
+          user.value = await fetchMe()
+        } catch {
+          // Token expired or invalid
+          logout()
+        }
+      })().finally(() => {
+        refreshPromise = null
+      })
     }
+    return refreshPromise
   }
 
   function logout() {

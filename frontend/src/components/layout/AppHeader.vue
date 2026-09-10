@@ -1,22 +1,23 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { setLocale, LANGUAGES } from '@/locales'
 import { useAuthStore } from '@/stores/authStore'
 import { useKnowledgeStore } from '@/stores/knowledgeStore'
+import { useUiStore } from '@/stores/uiStore'
 
 defineEmits<{ toggleSidebar: [] }>()
 
 const { t, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
-const isDark = ref(true)
 const auth = useAuthStore()
 const knowledge = useKnowledgeStore()
+const ui = useUiStore()
 
-watch(isDark, (val) => {
+watch(() => ui.isDark, (val) => {
   document.documentElement.classList.toggle('light', !val)
 }, { immediate: true })
 
@@ -70,11 +71,11 @@ function goModelManager() {
 
       <button
         class="theme-toggle"
-        :title="isDark ? t('theme.switchLight') : t('theme.switchDark')"
-        @click="isDark = !isDark"
+        :title="ui.isDark ? t('theme.switchLight') : t('theme.switchDark')"
+        @click="ui.isDark = !ui.isDark"
       >
         <el-icon>
-          <component :is="isDark ? 'Sunny' : 'Moon'" />
+          <component :is="ui.isDark ? 'Sunny' : 'Moon'" />
         </el-icon>
       </button>
 
@@ -112,7 +113,7 @@ function goModelManager() {
           :title="t('user.register')"
           @click="auth.openLoginModal"
         >
-          <el-icon :size="18"><UserPlus /></el-icon>
+          <el-icon :size="18"><Plus /></el-icon>
           <span class="register-text">{{ t('user.register') }}</span>
         </button>
         <button

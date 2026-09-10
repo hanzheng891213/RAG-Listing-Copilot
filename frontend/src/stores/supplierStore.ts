@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { SupplierProduct, ParseResult } from '@/types/supplier'
 import { generateId } from '@/utils/formatters'
+import { safeLocalStorage } from '@/utils/storage'
 
 export const useSupplierStore = defineStore('supplier', () => {
   const products = ref<SupplierProduct[]>([])
@@ -114,4 +115,11 @@ export const useSupplierStore = defineStore('supplier', () => {
     cancelEditing,
     setPendingFile,
   }
+}, {
+  // Persist parsed products across reloads. selectedIds is a Set (JSON-unsafe)
+  // and pendingFile holds a File object — both are intentionally excluded.
+  persist: {
+    pick: ['products', 'currentFileName', 'parseErrors'],
+    storage: safeLocalStorage,
+  },
 })

@@ -208,7 +208,7 @@ export default {
     goToUpload: '前往供应商上传',
     generating: '正在生成 Listing...',
     generatingDesc: 'AI 正在为您的商品创建优化内容',
-    demoWarning: '当前显示的是演示数据。配置 DeepSeek API Key 以启用真实 AI 生成。',
+    demoWarning: '当前显示的是演示数据。配置 供应商API Key 以启用真实 AI 生成。',
     demoMode: '演示模式：真实 AI 生成需要管理员账号。',
     backendUnavailable: '后端不可用 — 显示演示数据。',
     noListing: '尚未生成 Listing',

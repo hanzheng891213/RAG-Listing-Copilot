@@ -2,6 +2,7 @@
 import { ref, inject, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useListingGenerator } from '@/composables/useListingGenerator'
+import { useVirtualList } from '@/composables/useVirtualList'
 import { useSupplierStore } from '@/stores/supplierStore'
 import { LISTING_LANGUAGES } from '@/utils/constants'
 import type { SupplierProduct } from '@/types/supplier'
@@ -9,6 +10,7 @@ import type { SupplierProduct } from '@/types/supplier'
 const emit = defineEmits<{ generate: [product: SupplierProduct, language: string] }>()
 const { t } = useI18n()
 const { productSearch, filteredProducts, getProductLabel } = useListingGenerator()
+const { containerRef, onScroll, visibleItems, totalHeight, offsetY } = useVirtualList(filteredProducts)
 const supplierStore = useSupplierStore()
 
 const openProductId = ref<string | null>(null)
@@ -79,45 +81,49 @@ const radialItems = LISTING_LANGUAGES.map((lang, i) => {
         <template #prefix><el-icon><Search /></el-icon></template>
       </el-input>
 
-      <div class="product-list">
-        <div v-for="product in filteredProducts" :key="product.id" class="product-item">
-          <div class="product-info">
-            <span class="product-title">{{ getProductLabel(product) }}</span>
-            <span class="product-meta">{{ firstRawValue(product, [Object.keys(product.rawData)[0]]) }}</span>
-          </div>
-
-          <div class="btn-zone">
-            <div class="btn-row">
-              <button
-                class="gen-btn"
-                :class="{ active: openProductId === product.id }"
-                @click.stop="toggleMenu(product.id)"
-              >
-                <span v-if="openProductId !== product.id">{{ t('listing.generate') }}</span>
-                <span v-else class="gen-btn-close">&times;</span>
-              </button>
-
-              <button class="detail-btn" title="View Details" @click.stop="showProductDetail?.(product)">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>
-                </svg>
-              </button>
-            </div>
-
-            <Transition name="radial">
-              <div v-if="openProductId === product.id" class="radial-menu" @click.stop>
-                <div
-                  v-for="item in radialItems"
-                  :key="item.value"
-                  class="radial-item"
-                  :style="item.style"
-                  @click="selectLanguage(product, item.value)"
-                  :title="t(item.label)"
-                >
-                  <span class="radial-code">{{ item.value.slice(0, 2) }}</span>
-                </div>
+      <div ref="containerRef" class="product-list" @scroll="onScroll">
+        <div class="vl-spacer" :style="{ height: totalHeight + 'px' }">
+          <div class="vl-window" :style="{ transform: `translateY(${offsetY}px)` }">
+            <div v-for="product in visibleItems" :key="product.id" class="product-item">
+              <div class="product-info">
+                <span class="product-title">{{ getProductLabel(product) }}</span>
+                <span class="product-meta">{{ firstRawValue(product, [Object.keys(product.rawData)[0]]) }}</span>
               </div>
-            </Transition>
+
+              <div class="btn-zone">
+                <div class="btn-row">
+                  <button
+                    class="gen-btn"
+                    :class="{ active: openProductId === product.id }"
+                    @click.stop="toggleMenu(product.id)"
+                  >
+                    <span v-if="openProductId !== product.id">{{ t('listing.generate') }}</span>
+                    <span v-else class="gen-btn-close">&times;</span>
+                  </button>
+
+                  <button class="detail-btn" title="View Details" @click.stop="showProductDetail?.(product)">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>
+                    </svg>
+                  </button>
+                </div>
+
+                <Transition name="radial">
+                  <div v-if="openProductId === product.id" class="radial-menu" @click.stop>
+                    <div
+                      v-for="item in radialItems"
+                      :key="item.value"
+                      class="radial-item"
+                      :style="item.style"
+                      @click="selectLanguage(product, item.value)"
+                      :title="t(item.label)"
+                    >
+                      <span class="radial-code">{{ item.value.slice(0, 2) }}</span>
+                    </div>
+                  </div>
+                </Transition>
+              </div>
+            </div>
           </div>
         </div>
         <div v-if="filteredProducts.length === 0" class="no-results">{{ t('supplier.noProducts') }}</div>
@@ -127,15 +133,17 @@ const radialItems = LISTING_LANGUAGES.map((lang, i) => {
 </template>
 
 <style scoped>
-.product-selector { display: flex; flex-direction: column; gap: 16px; width: 100%; }
-.panel-title { font-family: var(--font-body); font-size: 15px; font-weight: 600; color: var(--text-primary); }
+.product-selector { display: flex; flex-direction: column; gap: 16px; width: 100%; height: 100%; }
+.panel-title { font-family: var(--font-body); font-size: 15px; font-weight: 600; color: var(--text-primary); flex-shrink: 0; }
 .no-products { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 32px 16px; text-align: center; color: var(--text-muted); font-size: 13px; }
-.product-list { display: flex; flex-direction: column; gap: 8px; flex: 1; width: 100%; }
-.product-item { display: flex; align-items: center; justify-content: space-between; padding: 12px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-md); gap: 12px; transition: all var(--transition-fast); position: relative; width: 100%; }
+.product-list { position: relative; flex: 1; min-height: 0; overflow-y: auto; width: 100%; }
+.vl-spacer { position: relative; width: 100%; }
+.vl-window { position: absolute; top: 0; left: 0; right: 0; display: flex; flex-direction: column; gap: 8px; }
+.product-item { display: flex; align-items: center; justify-content: space-between; height: 66px; box-sizing: border-box; padding: 12px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-md); gap: 12px; transition: all var(--transition-fast); position: relative; width: 100%; }
 .product-item:hover { border-color: var(--accent-dim); background: var(--bg-card-hover); }
 .product-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
 .product-title { font-size: 13px; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.product-meta { font-size: 11px; color: var(--text-muted); }
+.product-meta { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .no-results { text-align: center; padding: 24px; color: var(--text-muted); font-size: 13px; }
 
 /* ---- Button zone ---- */

@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { useAuthStore } from '@/stores/authStore'
 
 const props = defineProps<{ collapsed: boolean; mobileOpen: boolean }>()
 const emit = defineEmits<{ toggle: []; nav: [] }>()
@@ -8,14 +10,17 @@ const emit = defineEmits<{ toggle: []; nav: [] }>()
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
+const auth = useAuthStore()
 
-const navItems = [
+const BASE_NAV_ITEMS = [
   { path: '/', labelKey: 'nav.home', icon: 'HomeFilled' },
   { path: '/supplier-upload', labelKey: 'nav.supplierUpload', icon: 'Upload' },
   { path: '/listing-generator', labelKey: 'nav.listingGenerator', icon: 'MagicStick' },
   { path: '/knowledge-base', labelKey: 'nav.knowledgeBase', icon: 'Collection' },
-  { path: '/model-manager', labelKey: 'nav.modelManager', icon: 'Cpu' },
+  { path: '/model-manager', labelKey: 'nav.modelManager', icon: 'Cpu', requiresAdmin: true },
 ]
+
+const navItems = computed(() => BASE_NAV_ITEMS.filter((item) => !item.requiresAdmin || auth.isAdmin))
 
 function isActive(path: string) {
   if (path === '/') return route.path === '/'
@@ -36,9 +41,12 @@ function onNavHover(path: string) {
   const timer = setTimeout(() => {
     const routeRecord = router.getRoutes().find((r) => r.path === path)
     if (routeRecord?.components?.default) {
-      const comp = routeRecord.components.default as Function
-      // 调用动态 import 进行预加载
-      comp()
+      const comp = routeRecord.components.default
+      // 已访问过的路由 components.default 会被 Vue Router 替换为组件对象，
+      // 只有懒加载函数才需要调用预取
+      if (typeof comp === 'function') {
+        comp()
+      }
     }
     prefetchTimers.delete(path)
   }, 200)
