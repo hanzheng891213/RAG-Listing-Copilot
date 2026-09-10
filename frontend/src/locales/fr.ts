@@ -226,6 +226,8 @@ export default {
     totalTokens: 'Total Tokens (30j)',
     apiCalls: 'Appels API (30j)',
     costByProvider: 'Coût par fournisseur',
+
+    costByModel: 'Coût par modèle',
     dailyTokenUsage: 'Utilisation quotidienne des tokens (30j)',
     noUsageData: 'Aucune donnée d\'utilisation',
   },

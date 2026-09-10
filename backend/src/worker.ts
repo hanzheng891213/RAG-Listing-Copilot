@@ -7,7 +7,7 @@ import type { Platform } from './types/index.js'
 import { parserService } from './services/parser/parserService.js'
 import { deepseekService } from './services/deepseek/deepseekService.js'
 import { ragService } from './services/rag/ragService.js'
-import { modelService } from './services/model/modelService.js'
+import { modelService, initModelService } from './services/model/modelService.js'
 import { getKnowledgeService, resetKnowledgeService } from './services/knowledge/knowledgeService.js'
 import { extractListingFields, normalizeListingFields, parseFinalJson, streamDemoSse } from './utils/listingStream.js'
 
@@ -193,10 +193,15 @@ app.get('/api/models/providers', (c) => {
   return c.json({ providers })
 })
 
-app.get('/api/models/usage/stats', (c) => {
-  const days = parseInt(c.req.query('days') || '30')
-  const stats = modelService.getUsageStats(days)
-  return c.json(stats)
+app.get('/api/models/usage/stats', async (c) => {
+  try {
+    const days = parseInt(c.req.query('days') || '30')
+    const stats = await modelService.getUsageStats(days)
+    return c.json(stats)
+  } catch (error) {
+    console.error('Usage stats error:', error)
+    return c.json({ error: 'Failed to load usage stats', code: 'ERR_USAGE_STATS' }, 500)
+  }
 })
 
 // ════════════════════════════════════════════════════════════════════
@@ -751,6 +756,9 @@ export default {
   fetch: (request: Request, env: any, ctx: any) => {
     const url = new URL(request.url)
     if (url.pathname.startsWith('/api') || url.pathname === '/health' || url.pathname === '/') {
+      // Bindings are per-request in a Worker; the service holds onto the D1
+      // handle so usage recorded mid-generation can be persisted.
+      initModelService(env)
       return app.fetch(request, env, ctx)
     }
     return env.ASSETS.fetch(request)

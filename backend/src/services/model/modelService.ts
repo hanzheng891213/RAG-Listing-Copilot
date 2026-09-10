@@ -1,4 +1,4 @@
-import type { ModelProvider, ModelInfo, UsageRecord, UsageStats } from '../../types/model.js'
+import type { ModelProvider, ModelInfo, UsageRecord, UsageStats, UsageBreakdown } from '../../types/model.js'
 import { v4 as uuid } from 'uuid'
 
 // ─── Built-in provider definitions (no api keys here!) ────────────────
@@ -43,11 +43,47 @@ const BUILTIN_PROVIDERS: ModelProvider[] = [
   },
 ]
 
-const PRICING: Record<string, { input: number; output: number }> = {
-  deepseek: { input: 0.14, output: 0.28 },
-  qwen: { input: 0.08, output: 0.16 },
-  doubao: { input: 0.08, output: 0.16 },
+/**
+ * Price per 1M tokens in RMB, keyed by `${providerId}:${modelId}`.
+ *
+ * Providers do not expose their prices over the API, so this table is
+ * maintained by hand — check the provider's pricing page and update it when
+ * rates change. Anything not listed here falls back to PROVIDER_PRICING.
+ *
+ * The rate is applied when the record is written and the resulting cost is
+ * stored on the row, so editing this table never rewrites past usage.
+ */
+const MODEL_PRICING: Record<string, { input: number; output: number }> = {
+  'deepseek:deepseek-v4-flash': { input: 1, output: 2 },
+  'deepseek:deepseek-reasoner': { input: 4, output: 16 },
+  'qwen:qwen-plus': { input: 0.8, output: 2 },
+  'qwen:qwen-max': { input: 2.4, output: 9.6 },
+}
+
+/** Per-provider fallback for models without an explicit entry. */
+const PROVIDER_PRICING: Record<string, { input: number; output: number }> = {
+  deepseek: { input: 1, output: 2 },
+  qwen: { input: 0.8, output: 2 },
+  doubao: { input: 0.8, output: 2 },
   custom: { input: 0, output: 0 },
+}
+
+function priceFor(providerId: string, modelId: string): { input: number; output: number } {
+  return (
+    MODEL_PRICING[`${providerId}:${modelId}`] ??
+    PROVIDER_PRICING[providerId] ??
+    PROVIDER_PRICING.custom
+  )
+}
+
+/**
+ * D1 binding for durable usage storage, set per request by the Worker entry
+ * point. Without it (Express dev) usage stays in memory for the process.
+ */
+let d1Binding: any = null
+
+export function initModelService(env: any): void {
+  d1Binding = env?.KNOWLEDGE_DB ?? null
 }
 
 class ModelService {
@@ -83,8 +119,12 @@ class ModelService {
     const provider = BUILTIN_PROVIDERS.find((p) => p.id === providerId)
     if (!provider || !apiKey) return null
 
+    // The resolved id is what gets recorded — falling back so usage is still
+    // attributable when the caller left the model unspecified.
+    const resolvedModel = options?.model || provider.models[0]?.id || 'default'
+
     const payload: Record<string, unknown> = {
-      model: options?.model || provider.models[0]?.id || 'default',
+      model: resolvedModel,
       messages,
       temperature: options?.temperature ?? 0.7,
       max_tokens: options?.max_tokens ?? 4096,
@@ -114,7 +154,12 @@ class ModelService {
     }
 
     if (data.usage) {
-      this.recordUsage(providerId, options?.model || '', data.usage.prompt_tokens, data.usage.completion_tokens)
+      await this.recordUsage(
+        providerId,
+        resolvedModel,
+        data.usage.prompt_tokens,
+        data.usage.completion_tokens,
+      )
     }
 
     return data
@@ -134,12 +179,18 @@ class ModelService {
     const provider = BUILTIN_PROVIDERS.find((p) => p.id === providerId)
     if (!provider || !apiKey) return
 
+    const resolvedModel = options?.model || provider.models[0]?.id || 'default'
+
     const payload: Record<string, unknown> = {
-      model: options?.model || provider.models[0]?.id || 'default',
+      model: resolvedModel,
       messages,
       temperature: options?.temperature ?? 0.7,
       max_tokens: options?.max_tokens ?? 4096,
       stream: true,
+      // OpenAI-compatible APIs only report token usage in a streamed response
+      // when this is requested. Without it the final chunk carries no `usage`,
+      // so the main generation path recorded nothing at all.
+      stream_options: { include_usage: true },
     }
     if (options?.disableThinking) payload.thinking = { type: 'disabled' }
 
@@ -199,20 +250,34 @@ class ModelService {
     } finally {
       reader.releaseLock()
       if (streamUsage) {
-        this.recordUsage(providerId, options?.model || '', streamUsage.prompt_tokens, streamUsage.completion_tokens)
+        await this.recordUsage(
+          providerId,
+          resolvedModel,
+          streamUsage.prompt_tokens,
+          streamUsage.completion_tokens,
+        )
       }
     }
   }
 
   // ── Usage tracking ───────────────────────────────────────────────────
 
-  recordUsage(providerId: string, modelId: string, promptTokens: number, completionTokens: number): void {
-    const pricing = PRICING[providerId] || PRICING.custom
+  /**
+   * Persist one API call's usage. Never throws — a bookkeeping failure must not
+   * take down the generation that produced it.
+   */
+  async recordUsage(
+    providerId: string,
+    modelId: string,
+    promptTokens: number,
+    completionTokens: number,
+  ): Promise<void> {
+    const pricing = priceFor(providerId, modelId)
     const cost =
       (promptTokens / 1_000_000) * pricing.input +
       (completionTokens / 1_000_000) * pricing.output
 
-    this.usage.push({
+    const record: UsageRecord = {
       id: uuid(),
       date: new Date().toISOString(),
       providerId,
@@ -220,53 +285,161 @@ class ModelService {
       promptTokens,
       completionTokens,
       cost,
-    })
+    }
+
+    if (d1Binding) {
+      try {
+        await d1Binding
+          .prepare(
+            `INSERT INTO usage_records (id, created_at, provider_id, model_id, prompt_tokens, completion_tokens, cost)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .bind(
+            record.id,
+            record.date,
+            record.providerId,
+            record.modelId,
+            record.promptTokens,
+            record.completionTokens,
+            record.cost,
+          )
+          .run()
+        return
+      } catch (err) {
+        console.error('[modelService] Failed to persist usage, keeping it in memory:', err)
+      }
+    }
+
+    this.usage.push(record)
   }
 
-  getUsageStats(days = 30): UsageStats {
-    const cutoff = new Date()
-    cutoff.setDate(cutoff.getDate() - days)
-    const filtered = this.usage.filter((r) => new Date(r.date) >= cutoff)
+  async getUsageStats(days = 30): Promise<UsageStats> {
+    const cutoff = new Date(Date.now() - days * 86_400_000).toISOString()
 
-    const totalCost = filtered.reduce((s, r) => s + r.cost, 0)
-    const totalTokens = filtered.reduce((s, r) => s + r.promptTokens + r.completionTokens, 0)
-    const totalCalls = filtered.length
+    interface Row {
+      date: string
+      providerId: string
+      modelId: string
+      promptTokens: number
+      completionTokens: number
+      cost: number
+    }
 
-    const providerMap = new Map<string, { cost: number; tokens: number }>()
+    let rows: Row[]
+    if (d1Binding) {
+      const result = await d1Binding
+        .prepare(
+          `SELECT created_at, provider_id, model_id, prompt_tokens, completion_tokens, cost
+           FROM usage_records WHERE created_at >= ? ORDER BY created_at`,
+        )
+        .bind(cutoff)
+        .all()
+      rows = (result.results ?? []).map((r: any) => ({
+        date: r.created_at,
+        providerId: r.provider_id,
+        modelId: r.model_id ?? '',
+        promptTokens: r.prompt_tokens ?? 0,
+        completionTokens: r.completion_tokens ?? 0,
+        cost: r.cost ?? 0,
+      }))
+    } else {
+      rows = this.usage.filter((r) => r.date >= cutoff)
+    }
+
     const providerNames = new Map(BUILTIN_PROVIDERS.map((p) => [p.id, p.name]))
+    const modelNames = new Map(
+      BUILTIN_PROVIDERS.flatMap((p) => p.models.map((m) => [`${p.id}:${m.id}`, m.name])),
+    )
 
-    for (const r of filtered) {
-      const prev = providerMap.get(r.providerId) || { cost: 0, tokens: 0 }
-      prev.cost += r.cost
-      prev.tokens += r.promptTokens + r.completionTokens
-      providerMap.set(r.providerId, prev)
+    interface Bucket {
+      providerId: string
+      modelId: string
+      cost: number
+      promptTokens: number
+      completionTokens: number
+      calls: number
     }
-
-    const byProvider = Array.from(providerMap.entries()).map(([providerId, v]) => ({
+    const newBucket = (providerId: string, modelId = ''): Bucket => ({
       providerId,
-      providerName: providerNames.get(providerId) || providerId,
-      cost: Math.round(v.cost * 10000) / 10000,
-      tokens: v.tokens,
-    }))
+      modelId,
+      cost: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+      calls: 0,
+    })
 
+    const providerBuckets = new Map<string, Bucket>()
+    const modelBuckets = new Map<string, Bucket>()
     const dailyMap = new Map<string, { tokens: number; cost: number }>()
-    for (const r of filtered) {
+
+    let totalCost = 0
+    let totalPromptTokens = 0
+    let totalCompletionTokens = 0
+
+    for (const r of rows) {
+      totalCost += r.cost
+      totalPromptTokens += r.promptTokens
+      totalCompletionTokens += r.completionTokens
+
+      const provider = providerBuckets.get(r.providerId) ?? newBucket(r.providerId)
+      provider.cost += r.cost
+      provider.promptTokens += r.promptTokens
+      provider.completionTokens += r.completionTokens
+      provider.calls += 1
+      providerBuckets.set(r.providerId, provider)
+
+      const modelKey = `${r.providerId}:${r.modelId}`
+      const model = modelBuckets.get(modelKey) ?? newBucket(r.providerId, r.modelId)
+      model.cost += r.cost
+      model.promptTokens += r.promptTokens
+      model.completionTokens += r.completionTokens
+      model.calls += 1
+      modelBuckets.set(modelKey, model)
+
       const day = r.date.slice(0, 10)
-      const prev = dailyMap.get(day) || { tokens: 0, cost: 0 }
-      prev.tokens += r.promptTokens + r.completionTokens
-      prev.cost += r.cost
-      dailyMap.set(day, prev)
+      const dailyEntry = dailyMap.get(day) ?? { tokens: 0, cost: 0 }
+      dailyEntry.tokens += r.promptTokens + r.completionTokens
+      dailyEntry.cost += r.cost
+      dailyMap.set(day, dailyEntry)
     }
 
-    const daily = Array.from(dailyMap.entries())
-      .map(([date, v]) => ({ date, tokens: v.tokens, cost: Math.round(v.cost * 10000) / 10000 }))
+    const round = (n: number) => Math.round(n * 10000) / 10000
+    const toBreakdown = (b: Bucket, key: string, name: string): UsageBreakdown => ({
+      key,
+      name,
+      providerId: b.providerId,
+      modelId: b.modelId,
+      cost: round(b.cost),
+      promptTokens: b.promptTokens,
+      completionTokens: b.completionTokens,
+      tokens: b.promptTokens + b.completionTokens,
+      calls: b.calls,
+    })
+
+    const byProvider = [...providerBuckets.values()]
+      .map((b) => toBreakdown(b, b.providerId, providerNames.get(b.providerId) || b.providerId))
+      .sort((a, b) => b.cost - a.cost)
+
+    const byModel = [...modelBuckets.entries()]
+      .map(([key, b]) => {
+        const providerName = providerNames.get(b.providerId) || b.providerId
+        const modelName = modelNames.get(key) || b.modelId || 'unknown model'
+        return toBreakdown(b, key, `${providerName} · ${modelName}`)
+      })
+      .sort((a, b) => b.cost - a.cost)
+
+    const daily = [...dailyMap.entries()]
+      .map(([date, v]) => ({ date, tokens: v.tokens, cost: round(v.cost) }))
       .sort((a, b) => a.date.localeCompare(b.date))
 
     return {
-      totalCost: Math.round(totalCost * 10000) / 10000,
-      totalTokens,
-      totalCalls,
+      totalCost: round(totalCost),
+      totalTokens: totalPromptTokens + totalCompletionTokens,
+      totalPromptTokens,
+      totalCompletionTokens,
+      totalCalls: rows.length,
       byProvider,
+      byModel,
       daily,
     }
   }

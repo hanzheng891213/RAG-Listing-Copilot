@@ -333,6 +333,8 @@ export default {
     totalTokens: 'Total Tokens (30d)',
     apiCalls: 'API Calls (30d)',
     costByProvider: 'Cost by Provider',
+
+    costByModel: 'Cost by Model',
     dailyTokenUsage: 'Daily Token Usage (30d)',
     noUsageData: 'No usage data yet',
   },

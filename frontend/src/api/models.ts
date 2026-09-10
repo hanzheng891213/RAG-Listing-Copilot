@@ -21,11 +21,27 @@ export interface ProviderConfig {
   maxTokens: number
 }
 
+export interface UsageBreakdown {
+  key: string
+  name: string
+  providerId: string
+  modelId: string
+  cost: number
+  promptTokens: number
+  completionTokens: number
+  tokens: number
+  calls: number
+}
+
 export interface UsageStats {
   totalCost: number
   totalTokens: number
+  totalPromptTokens: number
+  totalCompletionTokens: number
   totalCalls: number
-  byProvider: { providerId: string; providerName: string; cost: number; tokens: number }[]
+  byProvider: UsageBreakdown[]
+  /** Usage split per model — several models can share one provider. */
+  byModel: UsageBreakdown[]
   daily: { date: string; tokens: number; cost: number }[]
 }
 

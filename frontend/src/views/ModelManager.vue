@@ -23,8 +23,8 @@ const selectedId = ref('deepseek')
 const saving = ref<Record<string, boolean>>({})
 const showKey = ref<Record<string, boolean>>({})
 const usageStats = ref<UsageStats>({
-  totalCost: 0, totalTokens: 0, totalCalls: 0,
-  byProvider: [], daily: [],
+  totalCost: 0, totalTokens: 0, totalPromptTokens: 0, totalCompletionTokens: 0, totalCalls: 0,
+  byProvider: [], byModel: [], daily: [],
 })
 
 const providers = computed(() => modelStore.providers)
@@ -58,23 +58,74 @@ const PROVIDER_COLORS: Record<string, string> = {
   deepseek: '#4F46E5',
   qwen: '#7C3AED',
   doubao: '#10B981',
-custom: '#6B7280',
+  custom: '#6B7280',
 }
 
+/** Blend a hex colour toward white, keeping one provider's models related. */
+function lighten(hex: string, amount: number): string {
+  const n = parseInt(hex.slice(1), 16)
+  const to2 = (c: number) => Math.round(c).toString(16).padStart(2, '0')
+  const mix = (c: number) => c + (255 - c) * amount
+  return `#${to2(mix((n >> 16) & 255))}${to2(mix((n >> 8) & 255))}${to2(mix(n & 255))}`
+}
+
+function shorten(s: string, max: number): string {
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s
+}
+
+/**
+ * Pie data is per model, not per provider — a provider can serve several models
+ * and those need to be told apart, so each also gets a shade of its provider's
+ * colour rather than an unrelated palette entry.
+ */
+const pieData = computed(() => {
+  const seen = new Map<string, number>()
+  return usageStats.value.byModel.map((m) => {
+    const nth = seen.get(m.providerId) ?? 0
+    seen.set(m.providerId, nth + 1)
+    const base = PROVIDER_COLORS[m.providerId] || '#6B7280'
+    return {
+      // Full name for the legend and tooltip…
+      name: m.name,
+      // …but the on-slice label carries only the model: a truncated
+      // "Provider · Model" collapses two models of one provider into identical
+      // text, which is exactly what the per-model split exists to avoid.
+      labelName: shorten(m.name.split(' · ').pop() || m.name, 18),
+      value: m.cost,
+      itemStyle: { color: nth === 0 ? base : lighten(base, Math.min(nth * 0.3, 0.75)) },
+    }
+  })
+})
+
 const pieOption = computed(() => ({
-  tooltip: { trigger: 'item', formatter: '{b}: ￥{c}（RMB）' },
-  legend: { bottom: 0, textStyle: { fontSize: 11 } },
+  tooltip: {
+    trigger: 'item',
+    formatter: (p: any) => `${p.name}<br/>￥${p.value}（${p.percent}%）`,
+  },
+  legend: {
+    type: 'scroll',
+    bottom: 0,
+    textStyle: { fontSize: 11 },
+    itemWidth: 10,
+    itemHeight: 10,
+  },
   series: [{
     type: 'pie',
-    radius: ['45%', '75%'],
-    center: ['50%', '45%'],
+    radius: ['40%', '62%'],
+    center: ['50%', '44%'],
     itemStyle: { borderRadius: 4, borderColor: '#2dd4a8', borderWidth: 0.1 },
-    label: { formatter: '{b}\n￥{c}（RMB）' },
-    data: usageStats.value.byProvider.map((p) => ({
-      name: p.providerName,
-      value: p.cost,
-      itemStyle: { color: PROVIDER_COLORS[p.providerId] || '#6B7280' },
-    })),
+    // Labels sit outside on leader lines. moveOverlap pushes colliding labels
+    // apart vertically instead of letting them stack or dropping them.
+    avoidLabelOverlap: true,
+    labelLayout: { moveOverlap: 'shiftY', hideOverlap: false },
+    label: {
+      show: true,
+      fontSize: 11,
+      lineHeight: 14,
+      formatter: (p: any) => `${p.data.labelName ?? p.name}\n￥${p.value}`,
+    },
+    labelLine: { length: 10, length2: 10, smooth: true },
+    data: pieData.value,
   }],
 }))
 
@@ -290,11 +341,11 @@ onMounted(loadData)
           </div>
         </div>
 
-        <!-- Pie Chart: Cost by Provider -->
+        <!-- Pie Chart: Cost by Model -->
         <div class="chart-section">
-          <div class="chart-title">{{ t('modelManager.costByProvider') }}</div>
-          <div v-if="usageStats.byProvider.length > 0" class="chart-wrap">
-            <VChart :option="pieOption" autoresize style="height: 220px" />
+          <div class="chart-title">{{ t('modelManager.costByModel') }}</div>
+          <div v-if="usageStats.byModel.length > 0" class="chart-wrap">
+            <VChart :option="pieOption" autoresize style="height: 260px" />
           </div>
           <div v-else class="chart-empty">{{ t('modelManager.noUsageData') }}</div>
         </div>

@@ -226,6 +226,8 @@ export default {
     totalTokens: 'إجمالي الرموز (30 يوماً)',
     apiCalls: 'استدعاءات API (30 يوماً)',
     costByProvider: 'التكلفة حسب المزود',
+
+    costByModel: 'التكلفة حسب الطراز',
     dailyTokenUsage: 'الاستخدام اليومي للرموز (30 يوماً)',
     noUsageData: 'لا توجد بيانات استخدام بعد',
   },

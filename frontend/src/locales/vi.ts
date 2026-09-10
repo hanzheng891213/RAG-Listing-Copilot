@@ -226,6 +226,8 @@ export default {
     totalTokens: 'Tổng Token (30 ngày)',
     apiCalls: 'Số lần gọi API (30 ngày)',
     costByProvider: 'Chi phí theo nhà cung cấp',
+
+    costByModel: 'Chi phí theo mô hình',
     dailyTokenUsage: 'Sử dụng Token hàng ngày (30 ngày)',
     noUsageData: 'Chưa có dữ liệu sử dụng',
   },

@@ -226,6 +226,8 @@ export default {
     totalTokens: 'Всего токенов (30 дн.)',
     apiCalls: 'Вызовов API (30 дн.)',
     costByProvider: 'Стоимость по поставщикам',
+
+    costByModel: 'Стоимость по моделям',
     dailyTokenUsage: 'Ежедневное использование токенов (30 дн.)',
     noUsageData: 'Данных об использовании пока нет',
   },

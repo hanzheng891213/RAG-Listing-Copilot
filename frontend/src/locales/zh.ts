@@ -372,6 +372,8 @@ export default {
     totalTokens: '总 Tokens (30天)',
     apiCalls: 'API 调用次数 (30天)',
     costByProvider: '各服务商花费占比',
+
+    costByModel: '各模型花费占比',
     dailyTokenUsage: '每日 Token 用量 (30天)',
     noUsageData: '暂无用量数据',
   },

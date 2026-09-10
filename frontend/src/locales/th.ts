@@ -226,6 +226,8 @@ export default {
     totalTokens: 'Token รวม (30 วัน)',
     apiCalls: 'การเรียก API (30 วัน)',
     costByProvider: 'ค่าใช้จ่ายตามผู้ให้บริการ',
+
+    costByModel: 'ค่าใช้จ่ายตามโมเดล',
     dailyTokenUsage: 'การใช้ Token รายวัน (30 วัน)',
     noUsageData: 'ยังไม่มีข้อมูลการใช้งาน',
   },
