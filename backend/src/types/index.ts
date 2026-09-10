@@ -84,6 +84,8 @@ export interface KnowledgeChunk {
     platform?: string
     category: string
     title: string
+    /** Which language body this chunk came from. */
+    lang?: string
   }
 }
 

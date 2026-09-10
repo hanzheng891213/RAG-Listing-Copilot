@@ -2,8 +2,12 @@
  * Embedding generation for RAG knowledge base.
  *
  * Supports two backends:
- * - Cloudflare Workers AI (@cf/baai/bge-small-en-v1.5, 384-dim)
+ * - Cloudflare Workers AI (@cf/baai/bge-m3, 1024-dim, multilingual)
  * - Local in-memory fallback (TF-IDF-like keyword vector, for dev without API)
+ *
+ * bge-m3 rather than the English-only bge-small: retrieval queries come from
+ * supplier product data, which is frequently Chinese, and an English-only model
+ * scored those queries poorly against the knowledge base.
  */
 
 export interface Embedder {
@@ -13,8 +17,11 @@ export interface Embedder {
 
 // ─── Cloudflare Workers AI Embedder ──────────────────────────────────
 
+export const EMBEDDING_MODEL = '@cf/baai/bge-m3'
+export const EMBEDDING_DIMENSIONS = 1024
+
 export class CloudflareEmbedder implements Embedder {
-  readonly dimension = 384
+  readonly dimension = EMBEDDING_DIMENSIONS
   private aiBinding: any
 
   constructor(aiBinding: any) {
@@ -25,7 +32,7 @@ export class CloudflareEmbedder implements Embedder {
     const results: number[][] = []
     // Workers AI supports batch, but process one at a time for reliability
     for (const text of texts) {
-      const response = await this.aiBinding.run('@cf/baai/bge-small-en-v1.5', { text })
+      const response = await this.aiBinding.run(EMBEDDING_MODEL, { text })
       results.push(response.data[0])
     }
     return results
@@ -63,11 +70,11 @@ function tokenize(text: string): Map<string, number> {
 
 /**
  * Generate a sparse TF-IDF-like vector.
- * We hash each token into 384 dimensions to match bge-small output size,
- * so the same vector store can be used for both backends.
+ * We hash each token into as many dimensions as the Cloudflare model emits, so
+ * the same vector store can be used for both backends.
  */
 export class LocalEmbedder implements Embedder {
-  readonly dimension = 384
+  readonly dimension = EMBEDDING_DIMENSIONS
 
   async embed(texts: string[]): Promise<number[][]> {
     return texts.map((text) => {

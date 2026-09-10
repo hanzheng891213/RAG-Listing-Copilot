@@ -8,7 +8,7 @@
 import { v4 as uuid } from 'uuid'
 import { chunkMarkdown } from './chunker.js'
 import { createEmbedder, cosineSimilarity, type Embedder, type LocalEmbedder } from './embedder.js'
-import { createVectorStore, type VectorStore } from './vectorStore.js'
+import { createVectorStore, type VectorStore, type VectorRecord } from './vectorStore.js'
 import type {
   KnowledgeDocument,
   KnowledgeChunk,
@@ -74,6 +74,25 @@ class DocumentStore {
  *  keeps the retrieved context to roughly a couple of thousand characters. */
 const DEFAULT_CONTEXT_CHUNKS = 4
 
+export type DocLang = 'en' | 'zh'
+
+/** Vector id for one chunk. The language is part of the id so a document's
+ *  English and Chinese chunks can coexist in the same index. */
+function chunkVectorId(docId: string, lang: DocLang, index: number): string {
+  return `${docId}-${lang}-${index}`
+}
+
+/** The language bodies a document carries, skipping any that are empty. */
+function documentBodies(
+  content: string,
+  contentZh?: string,
+): Array<{ lang: DocLang; text: string }> {
+  const bodies: Array<{ lang: DocLang; text: string }> = []
+  if (content.trim()) bodies.push({ lang: 'en', text: content })
+  if (contentZh?.trim()) bodies.push({ lang: 'zh', text: contentZh })
+  return bodies
+}
+
 export class KnowledgeService {
   private embedder: Embedder
   private vectorStore: VectorStore
@@ -112,22 +131,33 @@ export class KnowledgeService {
     const docId = uuid()
     const now = new Date().toISOString()
 
-    // Chunk
-    const chunkTexts = chunkMarkdown(content)
-    const chunks: KnowledgeChunk[] = chunkTexts.map((text, i) => ({
-      id: `${docId}-chunk-${i}`,
-      documentId: docId,
-      content: text,
-      chunkIndex: i,
-      metadata: {
-        platform: metadata.platform ?? '',
-        category: metadata.category,
-        title: metadata.title,
-      },
-    }))
+    // Chunk and embed every language body. Cross-lingual matching (a Chinese
+    // query against an English body) is weak even with a multilingual model, so
+    // each language gets its own vectors and queries hit their own language.
+    const vectorRecords: VectorRecord[] = []
+    let chunkCount = 0
 
-    // Embed
-    const embeddings = await this.embedder.embed(chunkTexts)
+    for (const body of documentBodies(content, metadata.contentZh)) {
+      const chunkTexts = chunkMarkdown(body.text)
+      const embeddings = await this.embedder.embed(chunkTexts)
+
+      chunkTexts.forEach((_, i) => {
+        vectorRecords.push({
+          id: chunkVectorId(docId, body.lang, i),
+          values: embeddings[i],
+          metadata: {
+            documentId: docId,
+            lang: body.lang,
+            platform: metadata.platform ?? '',
+            category: metadata.category,
+            title: metadata.title,
+            chunkIndex: String(i),
+          },
+        })
+      })
+
+      chunkCount += chunkTexts.length
+    }
 
     // Document metadata first: if this write fails, no vectors are left behind.
     // Upserting vectors first would strand them — invisible to listDocuments and
@@ -143,7 +173,7 @@ export class KnowledgeService {
       contentZh: metadata.contentZh ?? '',
       fileType: metadata.fileType ?? 'txt',
       fileSize: metadata.fileSize ?? Buffer.byteLength(content, 'utf8'),
-      chunkCount: chunks.length,
+      chunkCount,
       createdAt: now,
       updatedAt: now,
     }
@@ -174,18 +204,7 @@ export class KnowledgeService {
 
     await this.docStore.insert(docRecord)
 
-    // Store in vector store
-    const vectorRecords = chunks.map((chunk, i) => ({
-      id: chunk.id,
-      values: embeddings[i],
-      metadata: {
-        documentId: docId,
-        platform: metadata.platform ?? '',
-        category: metadata.category,
-        title: metadata.title,
-        chunkIndex: String(i),
-      },
-    }))
+    // Vectors last, so a failed metadata write can't strand them.
     await this.vectorStore.upsert(vectorRecords)
 
     return this.toKnowledgeDocument(docRecord)
@@ -227,9 +246,11 @@ export class KnowledgeService {
       if (!doc) continue
 
       const chunkIndex = parseInt(r.metadata.chunkIndex ?? '0')
+      const lang: DocLang = r.metadata.lang === 'zh' ? 'zh' : 'en'
+      const body = lang === 'zh' ? doc.contentZh : doc.content
       // Only the matched chunk is stored in the vector record, so recover its
-      // text by re-running the (deterministic) chunker over the document.
-      const chunkText = chunkMarkdown(doc.content)[chunkIndex] ?? ''
+      // text by re-running the (deterministic) chunker over the matching body.
+      const chunkText = chunkMarkdown(body ?? '')[chunkIndex] ?? ''
 
       searchResults.push({
         score: r.score,
@@ -405,11 +426,12 @@ export class KnowledgeService {
   async deleteDocument(id: string): Promise<void> {
     // Delete from vector store. getDocument falls back to D1, so the chunk ids
     // are still resolvable when the in-memory store is empty (cold start).
+    // Re-derive them from the bodies rather than from chunkCount, which now
+    // totals both languages.
     const doc = await this.getDocument(id)
     if (doc) {
-      const chunkIds = Array.from(
-        { length: doc.chunkCount },
-        (_, i) => `${id}-chunk-${i}`,
+      const chunkIds = documentBodies(doc.content, doc.contentZh).flatMap((body) =>
+        chunkMarkdown(body.text).map((_, i) => chunkVectorId(id, body.lang, i)),
       )
       await this.vectorStore.deleteByIds(chunkIds)
     }
