@@ -87,12 +87,16 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     documents.value = [...newSeeds, ...userDocs]
   }
 
-  const filteredDocuments = computed(() => {
-    let filtered = documents.value.filter((d) => d.category === activeTab.value)
+  /** Documents matching the platform filter. Shared by the rendered list and
+   *  the tab badges so a badge can never disagree with the tab's contents. */
+  const platformFiltered = computed(() =>
+    activePlatform.value
+      ? documents.value.filter((d) => d.platform === activePlatform.value)
+      : documents.value,
+  )
 
-    if (activePlatform.value) {
-      filtered = filtered.filter((d) => d.platform === activePlatform.value)
-    }
+  const filteredDocuments = computed(() => {
+    let filtered = platformFiltered.value.filter((d) => d.category === activeTab.value)
 
     if (searchQuery.value.trim()) {
       const q = searchQuery.value.toLowerCase()
@@ -107,10 +111,12 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     return filtered
   })
 
+  // Badges track the platform filter but not the search box — a count describes
+  // the tab, not the current query.
   const tabCounts = computed(() => ({
-    platform_rules: documents.value.filter((d) => d.category === 'platform_rules').length,
-    templates: documents.value.filter((d) => d.category === 'templates').length,
-    history: documents.value.filter((d) => d.category === 'history').length,
+    platform_rules: platformFiltered.value.filter((d) => d.category === 'platform_rules').length,
+    templates: platformFiltered.value.filter((d) => d.category === 'templates').length,
+    history: platformFiltered.value.filter((d) => d.category === 'history').length,
   }))
 
   function setTab(tab: KnowledgeCategory) {
