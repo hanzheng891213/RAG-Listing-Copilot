@@ -121,21 +121,9 @@ export class KnowledgeService {
     // Embed
     const embeddings = await this.embedder.embed(chunkTexts)
 
-    // Store in vector store
-    const vectorRecords = chunks.map((chunk, i) => ({
-      id: chunk.id,
-      values: embeddings[i],
-      metadata: {
-        documentId: docId,
-        platform: metadata.platform ?? '',
-        category: metadata.category,
-        title: metadata.title,
-        chunkIndex: String(i),
-      },
-    }))
-    await this.vectorStore.upsert(vectorRecords)
-
-    // Store document metadata
+    // Document metadata first: if this write fails, no vectors are left behind.
+    // Upserting vectors first would strand them — invisible to listDocuments and
+    // enough to make searchKnowledge throw on the missing metadata row.
     const docRecord: DocRecord = {
       id: docId,
       title: metadata.title,
@@ -173,6 +161,20 @@ export class KnowledgeService {
     }
 
     await this.docStore.insert(docRecord)
+
+    // Store in vector store
+    const vectorRecords = chunks.map((chunk, i) => ({
+      id: chunk.id,
+      values: embeddings[i],
+      metadata: {
+        documentId: docId,
+        platform: metadata.platform ?? '',
+        category: metadata.category,
+        title: metadata.title,
+        chunkIndex: String(i),
+      },
+    }))
+    await this.vectorStore.upsert(vectorRecords)
 
     return this.toKnowledgeDocument(docRecord)
   }
@@ -351,8 +353,9 @@ export class KnowledgeService {
   }
 
   async deleteDocument(id: string): Promise<void> {
-    // Delete from vector store
-    const doc = await this.docStore.getById(id)
+    // Delete from vector store. getDocument falls back to D1, so the chunk ids
+    // are still resolvable when the in-memory store is empty (cold start).
+    const doc = await this.getDocument(id)
     if (doc) {
       const chunkIds = Array.from(
         { length: doc.chunkCount },
