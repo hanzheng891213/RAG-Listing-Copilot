@@ -49,8 +49,9 @@ export function chunkText(
     // If adding this paragraph would exceed chunk size, finalize current chunk
     if (current && current.length + trimmed.length + 2 > chunkSize) {
       chunks.push(current.trim())
-      // Start new chunk with overlap from previous
-      current = current.slice(-overlap) + '\n\n' + trimmed
+      // Carry overlap into the next chunk, starting at a word boundary so the
+      // chunk doesn't open with the tail of a word.
+      current = overlapTail(current, overlap) + '\n\n' + trimmed
     } else if (current) {
       current += '\n\n' + trimmed
     } else {
@@ -71,29 +72,76 @@ export function chunkText(
   return chunks.filter((c) => c.length > 0)
 }
 
+/**
+ * Ordered split preferences. Markdown tables and lists put one row per line,
+ * so a line break is the boundary that keeps their rows intact; a hard cut in
+ * the middle of a table row is worse than a slightly short chunk.
+ */
+const BREAK_SEPARATORS = ['\n\n', '\n', '. ', '。', '! ', '！', '? ', '？', '; ', '；', ' ']
+
+/**
+ * Index just past the last preferred separator within [from, to], or null when
+ * the window holds none.
+ */
+function findBreak(text: string, from: number, to: number): number | null {
+  for (const sep of BREAK_SEPARATORS) {
+    const idx = text.lastIndexOf(sep, to)
+    if (idx >= from) return idx + sep.length
+  }
+  return null
+}
+
+/** Last `overlap` characters of `text`, advanced to the next word boundary. */
+function overlapTail(text: string, overlap: number): string {
+  if (text.length <= overlap) return text
+  const tail = text.slice(-overlap)
+  const boundary = tail.search(/\s/)
+  return boundary >= 0 ? tail.slice(boundary + 1) : tail
+}
+
+/**
+ * First position at or after `from` (and before `limit`) where a chunk can
+ * safely resume: a line break if one is in range, otherwise a space. Keeps the
+ * overlap from reopening the next chunk with the tail of a word.
+ */
+function findResume(text: string, from: number, limit: number): number {
+  for (let i = from; i < limit; i++) {
+    if (text[i] === '\n') return i + 1
+  }
+  for (let i = from; i < limit; i++) {
+    if (text[i] === ' ') return i + 1
+  }
+  return from
+}
+
 function splitLongText(text: string, chunkSize: number, overlap: number): string[] {
   const chunks: string[] = []
   let start = 0
 
   while (start < text.length) {
-    let end = start + chunkSize
+    let end = Math.min(start + chunkSize, text.length)
     if (end >= text.length) {
-      chunks.push(text.slice(start).trim())
+      const tail = text.slice(start).trim()
+      if (tail) chunks.push(tail)
       break
     }
 
-    // Try to break at sentence boundary
-    const slice = text.slice(start, end + 50) // look a bit ahead
-    const sentenceBreak = slice.slice(0, chunkSize).match(/[.!?。！？]\s+/g)
-    if (sentenceBreak) {
-      const lastBreak = slice.lastIndexOf(sentenceBreak[sentenceBreak.length - 1])
-      if (lastBreak > chunkSize * 0.5) {
-        end = start + lastBreak + 1
-      }
-    }
+    // Look slightly past the target so a nearby boundary can be used instead of
+    // cutting a word in half. Never search before the halfway point, or chunks
+    // could shrink without bound.
+    const breakAt = findBreak(
+      text,
+      start + Math.floor(chunkSize * 0.5),
+      Math.min(end + 100, text.length - 1),
+    )
+    if (breakAt !== null) end = breakAt
 
-    chunks.push(text.slice(start, end).trim())
-    start = end - overlap
+    const piece = text.slice(start, end).trim()
+    if (piece) chunks.push(piece)
+
+    // Always advance, even when overlap would otherwise rewind the cursor.
+    const next = end - overlap
+    start = next > start ? Math.max(findResume(text, next, end), next) : end
   }
 
   return chunks.filter((c) => c.length > 0)
