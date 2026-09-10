@@ -23,8 +23,6 @@ const SEED_DOCS_EN: SeedDoc[] = [
   { id: 'seed-3', title: 'Amazon Product Detail Page Rules', excerpt: 'Title, image, bullet point, description, and variation requirements with compliance checklist.', tags: ['amazon', 'listing', 'detail-page'], category: 'platform_rules', platform: 'amazon', fileType: 'md', fileSize: 5500 },
   { id: 'seed-4', title: 'Product Safety & Compliance Certifications', excerpt: 'FDA, CPC, CE, FCC certification requirements by product category and marketplace.', tags: ['compliance', 'safety', 'certification'], category: 'platform_rules', platform: 'amazon', fileType: 'md', fileSize: 4800 },
   { id: 'seed-5', title: 'Category Listing Restrictions', excerpt: 'Gated categories including Jewelry, Beauty, Baby, Automotive with approval requirements and application process.', tags: ['categories', 'gated', 'approval'], category: 'platform_rules', platform: 'amazon', fileType: 'md', fileSize: 6200 },
-  { id: 'seed-6', title: 'Electronics Listing Template', excerpt: 'Optimized template for electronics category with structured bullet points and keyword placement.', tags: ['electronics', 'template', 'seo'], category: 'templates', platform: 'amazon', fileType: 'md', fileSize: 2800 },
-  { id: 'seed-7', title: 'Home & Kitchen Template', excerpt: 'Home & Kitchen listing template with A+ content structure and lifestyle image guidelines.', tags: ['home', 'kitchen', 'template'], category: 'templates', platform: 'amazon', fileType: 'md', fileSize: 2400 },
   { id: 'seed-8', title: 'Restricted Keywords Database', excerpt: 'Database of prohibited claims and restricted keywords across all platforms.', tags: ['keywords', 'restricted', 'all-platforms'], category: 'platform_rules', platform: 'amazon', fileType: 'md', fileSize: 3800 },
 ]
 
@@ -34,20 +32,16 @@ const SEED_DOCS_ZH: SeedDoc[] = [
   { id: 'seed-3', title: '亚马逊商品详情页规则', excerpt: '标题、图片、五点描述、产品描述和变体要求，附合规检查清单。', tags: ['亚马逊', '上架', '详情页'], category: 'platform_rules', platform: 'amazon', fileType: 'md', fileSize: 5500 },
   { id: 'seed-4', title: '产品安全与合规认证', excerpt: 'FDA、CPC、CE、FCC 认证要求，按产品类别和站点分类。', tags: ['合规', '安全', '认证'], category: 'platform_rules', platform: 'amazon', fileType: 'md', fileSize: 4800 },
   { id: 'seed-5', title: '品类准入与分类审核', excerpt: '受限类别包括珠宝、美容、婴儿、汽车等，附批准要求和申请流程。', tags: ['品类', '受限', '批准'], category: 'platform_rules', platform: 'amazon', fileType: 'md', fileSize: 6200 },
-  { id: 'seed-6', title: '电子产品上架模板', excerpt: '电子产品类目优化模板，包含结构化五点描述和关键词布局。', tags: ['电子产品', '模板', 'SEO'], category: 'templates', platform: 'amazon', fileType: 'md', fileSize: 2800 },
-  { id: 'seed-7', title: '家居厨房模板', excerpt: '家居厨房上架模板，包含 A+ 内容结构和生活场景图片指南。', tags: ['家居', '厨房', '模板'], category: 'templates', platform: 'amazon', fileType: 'md', fileSize: 2400 },
   { id: 'seed-8', title: '受限关键词数据库', excerpt: '所有平台的禁止声明和受限关键词数据库。', tags: ['关键词', '受限', '全平台'], category: 'platform_rules', platform: 'amazon', fileType: 'md', fileSize: 3800 },
 ]
 
-const SEED_IDS = ['seed-1', 'seed-2', 'seed-3', 'seed-4', 'seed-5', 'seed-6', 'seed-7', 'seed-8']
+const SEED_IDS = ['seed-1', 'seed-2', 'seed-3', 'seed-4', 'seed-5', 'seed-8']
 const FIXED_DATES: Record<string, { uploadedAt: string; updatedAt: string }> = {
   'seed-1': { uploadedAt: '2026-06-30T08:00:00Z', updatedAt: '2026-06-30T08:00:00Z' },
   'seed-2': { uploadedAt: '2026-06-30T08:00:00Z', updatedAt: '2026-06-30T08:00:00Z' },
   'seed-3': { uploadedAt: '2026-06-30T08:00:00Z', updatedAt: '2026-06-30T08:00:00Z' },
   'seed-4': { uploadedAt: '2026-06-30T08:00:00Z', updatedAt: '2026-06-30T08:00:00Z' },
   'seed-5': { uploadedAt: '2026-06-30T08:00:00Z', updatedAt: '2026-06-30T08:00:00Z' },
-  'seed-6': { uploadedAt: '2026-06-30T08:00:00Z', updatedAt: '2026-06-30T08:00:00Z' },
-  'seed-7': { uploadedAt: '2026-06-30T08:00:00Z', updatedAt: '2026-06-30T08:00:00Z' },
   'seed-8': { uploadedAt: '2026-06-30T08:00:00Z', updatedAt: '2026-06-30T08:00:00Z' },
 }
 
