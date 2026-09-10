@@ -35,7 +35,9 @@ async function buildGroundedPrompt(
     deepseekService.buildRetrievalQuery(productData),
     { platform },
   )
-  console.log(`[Generate] Knowledge retrieval: ${knowledge.length} chars (platform=${platform})`)
+  console.log(
+    `[Generate] Knowledge: rules=${knowledge.rules.length} style=${knowledge.style.length} chars (platform=${platform})`,
+  )
   return deepseekService.buildPromptForProvider(productData, platform, template, language, knowledge)
 }
 

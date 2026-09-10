@@ -59,9 +59,9 @@ export interface KnowledgeDocument {
   platform?: Platform
   tags: string[]
   /**
-   * Canonical English body — this is what gets embedded and retrieved. The
-   * embedding model is English-only, so the Chinese body is stored alongside
-   * for display rather than being indexed.
+   * Canonical English body. Embedded and retrieved alongside the Chinese body —
+   * each language gets its own vectors so a query hits chunks in its own
+   * language.
    */
   content: string
   /** Chinese display title, when the document has one. */
@@ -93,6 +93,18 @@ export interface KnowledgeSearchResult {
   chunk: KnowledgeChunk
   document: KnowledgeDocument
   score: number
+}
+
+/**
+ * Retrieval split into the two roles the generation prompt needs. Kept as two
+ * strings rather than one because the prompt must mark the regulations as
+ * authoritative and the templates as style guidance only.
+ */
+export interface KnowledgeContext {
+  /** Retrieved platform_rules chunks — authoritative policy for the platform. */
+  rules: string
+  /** Retrieved template chunks — structure and tone reference, not policy. */
+  style: string
 }
 
 export interface IngestDocumentRequest {

@@ -14,6 +14,7 @@ import type {
   KnowledgeChunk,
   KnowledgeSearchResult,
   KnowledgeCategory,
+  KnowledgeContext,
   ComplianceResult,
   Platform,
 } from '../../types/index.js'
@@ -70,9 +71,43 @@ class DocumentStore {
 
 // ─── Knowledge Service ────────────────────────────────────────────────
 
-/** Chunks injected into a generation prompt. Each is ~512 chars, so this
- *  keeps the retrieved context to roughly a couple of thousand characters. */
-const DEFAULT_CONTEXT_CHUNKS = 4
+/**
+ * Retrieval is fetched as one wide pool and then split by category, rather than
+ * run as two filtered queries: `category` is only filterable via a Vectorize
+ * metadata index, and the pool approach needs no index and no re-upsert.
+ *
+ * The pool has to be wide because template documents embed product examples in
+ * their body, so a product query scores them above the policy documents — at
+ * top-4 the regulations were crowded out entirely.
+ */
+const RETRIEVAL_POOL_CHUNKS = 20
+
+/** Regulations injected as authoritative policy. Each chunk is ~512 chars. */
+const DEFAULT_RULE_CHUNKS = 4
+
+/** Style-reference chunks injected alongside the regulations. */
+const DEFAULT_STYLE_CHUNKS = 2
+
+/** Category whose chunks state binding platform policy. */
+const RULE_CATEGORY = 'platform_rules'
+
+/** Category whose chunks are listing structure examples, not policy. */
+const STYLE_CATEGORY = 'templates'
+
+/** Renders chunks as markdown sections for prompt injection. */
+function formatChunks(results: KnowledgeSearchResult[]): string {
+  return results
+    .map((r) => {
+      const { title, platform } = r.chunk.metadata
+      const source = platform ? `${title} [${platform}]` : title
+      return `### ${source}\n${r.chunk.content}`
+    })
+    .join('\n\n')
+}
+
+function emptyContext(): KnowledgeContext {
+  return { rules: '', style: '' }
+}
 
 export type DocLang = 'en' | 'zh'
 
@@ -230,18 +265,26 @@ export class KnowledgeService {
       filter: Object.keys(filter).length > 0 ? filter : undefined,
     })
 
+    // A wide pool returns many chunks from the same few documents, and each miss
+    // costs a D1 round trip. Cache per call so each document is fetched once.
+    const docCache = new Map<string, DocRecord | null>()
+
     const searchResults: KnowledgeSearchResult[] = []
     for (const r of results) {
       const docId = r.metadata.documentId
       if (!docId) continue
 
-      let doc = await this.docStore.getById(docId)
-      if (!doc && this.d1Binding) {
-        const row = await this.d1Binding
-          .prepare('SELECT * FROM documents WHERE id = ?')
-          .bind(docId)
-          .first()
-        if (row) doc = this.rowToDocRecord(row)
+      let doc = docCache.get(docId)
+      if (doc === undefined) {
+        doc = await this.docStore.getById(docId)
+        if (!doc && this.d1Binding) {
+          const row = await this.d1Binding
+            .prepare('SELECT * FROM documents WHERE id = ?')
+            .bind(docId)
+            .first()
+          if (row) doc = this.rowToDocRecord(row)
+        }
+        docCache.set(docId, doc ?? null)
       }
       if (!doc) continue
 
@@ -273,35 +316,38 @@ export class KnowledgeService {
   }
 
   /**
-   * Prompt-ready excerpt of the chunks most relevant to `query`, for injecting
-   * real platform rules into a generation prompt.
+   * Prompt-ready excerpts of the chunks most relevant to `query`, split into
+   * the two roles the generation prompt needs: binding platform regulations and
+   * style-reference templates.
    *
-   * Retrieval is an enhancement, not a hard dependency: returns '' when there
-   * is nothing to retrieve, or when the vector store is unavailable.
+   * Retrieval is an enhancement, not a hard dependency: either section comes
+   * back empty when there is nothing of that category to retrieve, or when the
+   * vector store is unavailable.
    */
   async buildPromptContext(
     query: string,
-    options?: { platform?: string; topK?: number },
-  ): Promise<string> {
-    if (!query.trim()) return ''
+    options?: { platform?: string; poolSize?: number },
+  ): Promise<KnowledgeContext> {
+    if (!query.trim()) return emptyContext()
 
     try {
-      const results = await this.searchKnowledge(query, {
+      const pool = await this.searchKnowledge(query, {
         platform: options?.platform,
-        topK: options?.topK ?? DEFAULT_CONTEXT_CHUNKS,
+        topK: options?.poolSize ?? RETRIEVAL_POOL_CHUNKS,
       })
-      if (results.length === 0) return ''
 
-      return results
-        .map((r) => {
-          const { title, platform } = r.chunk.metadata
-          const source = platform ? `${title} [${platform}]` : title
-          return `### ${source}\n${r.chunk.content}`
-        })
-        .join('\n\n')
+      // searchKnowledge preserves descending score order, so filtering then
+      // slicing keeps the best chunk of each category.
+      const pick = (category: string, limit: number) =>
+        formatChunks(pool.filter((r) => r.chunk.metadata.category === category).slice(0, limit))
+
+      return {
+        rules: pick(RULE_CATEGORY, DEFAULT_RULE_CHUNKS),
+        style: pick(STYLE_CATEGORY, DEFAULT_STYLE_CHUNKS),
+      }
     } catch (err) {
       console.error('[Knowledge] Retrieval failed, generating without context:', err)
-      return ''
+      return emptyContext()
     }
   }
 

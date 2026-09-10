@@ -1,4 +1,4 @@
-import type { SupplierProduct, GeneratedListing, Platform, ComplianceResult } from '../../types/index.ts'
+import type { SupplierProduct, GeneratedListing, Platform, ComplianceResult, KnowledgeContext } from '../../types/index.ts'
 import { ragService } from '../rag/ragService.ts'
 import { v4 as uuid } from 'uuid'
 
@@ -44,7 +44,7 @@ export class DeepSeekService {
   }
 
   /**
-   * @param knowledgeContext Retrieved knowledge-base excerpts to ground the
+   * @param knowledge Retrieved knowledge-base excerpts to ground the
    *   prompt. When omitted the caller has no knowledge service available, so
    *   the prompt falls back to the built-in rule list.
    */
@@ -53,11 +53,11 @@ export class DeepSeekService {
     platform: Platform,
     template?: string,
     language?: string,
-    knowledgeContext?: string,
+    knowledge?: KnowledgeContext,
   ): string {
     const label = getProductLabel(product)
     const docs = ragService.searchRelevantDocs(label, platform)
-    return this.buildPrompt(product, platform, template || 'standard', docs, language, knowledgeContext)
+    return this.buildPrompt(product, platform, template || 'standard', docs, language, knowledge)
   }
 
   private buildPrompt(
@@ -66,15 +66,29 @@ export class DeepSeekService {
     _template: string,
     docs: ReturnType<typeof ragService.searchRelevantDocs>,
     language?: string,
-    knowledgeContext?: string,
+    knowledge?: KnowledgeContext,
   ): string {
     const langInstruction = language && language !== 'english'
       ? `\n\nIMPORTANT: All generated content (title, bullet points, description, keywords) MUST be written entirely in ${language}. Do not use English.`
       : ''
 
-    const rulesSection = knowledgeContext?.trim()
-      ? `Platform Rules to Follow (retrieved from the knowledge base — treat as authoritative for ${platform}):\n${knowledgeContext}`
-      : `Platform Rules to Follow:\n${docs.platformRules.map((r) => `- ${r}`).join('\n')}`
+    // The retrieved regulations and the built-in list are both included: the
+    // built-in red lines are short, and they must survive even when retrieval
+    // comes back with nothing useful.
+    const retrievedRules = knowledge?.rules?.trim()
+    // Only some platforms define a built-in list, so the block is omitted
+    // rather than printed with an empty header.
+    const builtinRules = docs.platformRules.map((r) => `- ${r}`).join('\n')
+    const baselineSection = builtinRules ? `\n\nBaseline red lines (always apply):\n${builtinRules}` : ''
+    const rulesSection = `Platform Rules to Follow (authoritative for ${platform}):\n${
+      retrievedRules || '(no platform regulations were retrieved for this product)'
+    }${baselineSection}`
+
+    // Templates are structure examples, not policy — kept in their own section
+    // so they cannot be mistaken for binding rules.
+    const styleSection = knowledge?.style?.trim()
+      ? `\n\nListing Style Reference (structure and tone only — not policy):\n${knowledge.style}`
+      : ''
 
     return `You are an expert e-commerce listing optimizer for ${platform}.
 
@@ -83,7 +97,7 @@ ${JSON.stringify(product.rawData, null, 2)}
 
 Please analyze this data to identify the product name, description, price, specifications, category, and any other relevant attributes. Then generate an optimized e-commerce listing.
 
-${rulesSection}
+${rulesSection}${styleSection}
 
 Restricted Keywords to Avoid:
 ${docs.restrictedKeywords.join(', ')}
