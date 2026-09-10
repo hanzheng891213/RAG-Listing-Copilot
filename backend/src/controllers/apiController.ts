@@ -7,6 +7,7 @@ import { modelService } from '../services/model/modelService.js'
 import { getKnowledgeService, type KnowledgeService } from '../services/knowledge/knowledgeService.js'
 import type { Platform } from '../types/index.js'
 import type { JwtPayload } from '../types/auth.js'
+import { extractListingFields, normalizeListingFields, parseFinalJson, streamDemoSse } from '../utils/listingStream.js'
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -108,7 +109,7 @@ router.post('/generate-listing', async (req: Request, res: Response) => {
           { role: 'system', content: systemMsg },
           { role: 'user', content: prompt },
         ],
-        { model, temperature, max_tokens: maxTokens },
+        { model, temperature, max_tokens: maxTokens, disableThinking: (providerId || 'deepseek') === 'deepseek' },
       )
 
       if (!data) {
@@ -233,30 +234,6 @@ router.post('/generate-listing/stream', async (req: Request, res: Response) => {
       return
     }
 
-    if (!isAdmin(req)) {
-      res.json({
-        id: 'gen-' + Date.now(),
-        productId,
-        title: 'Demo Title',
-        bulletPoints: ['Demo point 1', 'Demo point 2'],
-        description: 'Demo description',
-        keywords: ['demo'],
-        seoScore: 85,
-        complianceResults: [],
-        platform: platform || 'amazon',
-        template: template || 'standard',
-        version: 1,
-        createdAt: new Date().toISOString(),
-        isDemo: true,
-      })
-      return
-    }
-
-    if (!apiKey) {
-      res.status(400).json({ error: 'API key is required', code: 'ERR_NO_API_KEY' })
-      return
-    }
-
     // Set SSE headers
     res.setHeader('Content-Type', 'text/event-stream')
     res.setHeader('Cache-Control', 'no-cache')
@@ -264,44 +241,33 @@ router.post('/generate-listing/stream', async (req: Request, res: Response) => {
     res.setHeader('X-Accel-Buffering', 'no')
     res.flushHeaders()
 
+    if (!isAdmin(req)) {
+      // Non-admin: stream demo data as SSE (frontend expects SSE, not a plain JSON body)
+      await streamDemoSse((line) => res.write(line), {
+        productId,
+        platform,
+        template,
+      })
+      res.end()
+      return
+    }
+
+    if (!apiKey) {
+      res.write(`data: ${JSON.stringify({ type: 'error', message: 'API key is required. Please configure it in Model Manager.' })}\n\n`)
+      res.end()
+      return
+    }
+
     const prompt = deepseekService.buildPromptForProvider(productData, platform as Platform, template, language)
 
     const systemMsg = language && language !== 'english'
       ? `You are a helpful e-commerce listing assistant. Respond in JSON format with: title, bulletPoints (array of 5 strings), description, keywords (array of strings). All content MUST be written in ${language}.`
       : 'You are a helpful e-commerce listing assistant. Respond in JSON format with: title, bulletPoints (array of 5 strings), description, keywords (array of strings).'
 
+    const sse = (obj: unknown) => res.write(`data: ${JSON.stringify(obj)}\n\n`)
+
     let accumulated = ''
-    let sentFields = new Set<string>()
-    let lastParse: any = null
-
-    // Helper: try to extract fields from partial JSON and send SSE events
-    function trySendFields() {
-      try {
-        const parsed = JSON.parse(accumulated)
-        if (!parsed || typeof parsed !== 'object') return
-
-        const fields: [string, string][] = [['title', 'string'], ['description', 'string']]
-        const arrayFields: [string, string][] = [['bulletPoints', 'array'], ['keywords', 'array']]
-
-        for (const [field, type] of fields) {
-          if (!sentFields.has(field) && typeof parsed[field] === 'string' && parsed[field].length > 3) {
-            sentFields.add(field)
-            res.write(`data: ${JSON.stringify({ type: 'field', field, value: parsed[field] })}\n\n`)
-          }
-        }
-
-        for (const [field, type] of arrayFields) {
-          if (!sentFields.has(field) && Array.isArray(parsed[field]) && parsed[field].length > 0) {
-            sentFields.add(field)
-            res.write(`data: ${JSON.stringify({ type: 'field', field, value: parsed[field] })}\n\n`)
-          }
-        }
-
-        lastParse = parsed
-      } catch {
-        // not yet valid JSON
-      }
-    }
+    const sent = new Map<string, unknown>()
 
     try {
       for await (const chunk of modelService.callProviderAPIStream(
@@ -311,29 +277,44 @@ router.post('/generate-listing/stream', async (req: Request, res: Response) => {
           { role: 'system', content: systemMsg },
           { role: 'user', content: prompt },
         ],
-        { model, temperature, max_tokens: maxTokens },
+        { model, temperature, max_tokens: maxTokens, disableThinking: (providerId || 'deepseek') === 'deepseek' },
       )) {
         accumulated += chunk
-        trySendFields()
+        const fields = extractListingFields(accumulated)
+        for (const [field, value] of Object.entries(fields)) {
+          if (field === 'bulletPoints' || field === 'keywords') {
+            if (!sent.has(field)) {
+              sent.set(field, value)
+              sse({ type: 'field', field, value })
+            }
+          } else {
+            if (sent.get(field) !== value) {
+              sent.set(field, value)
+              sse({ type: 'field', field, value })
+            }
+          }
+        }
       }
 
       // Final parse to get complete data
-      if (lastParse) {
+      const parsed = parseFinalJson(accumulated)
+      if (parsed) {
+        const norm = normalizeListingFields(parsed)
         const ks = getKs()
         const complianceResults = await ks.checkCompliance(
-          [lastParse.title || '', ...(lastParse.bulletPoints || []), lastParse.description || ''].join(' '),
+          [norm.title, ...norm.bulletPoints, norm.description].join(' '),
           platform,
         )
 
-        res.write(`data: ${JSON.stringify({
+        sse({
           type: 'done',
           listing: {
             id: 'gen-' + Date.now(),
             productId,
-            title: lastParse.title,
-            bulletPoints: lastParse.bulletPoints,
-            description: lastParse.description,
-            keywords: lastParse.keywords,
+            title: norm.title,
+            bulletPoints: norm.bulletPoints,
+            description: norm.description,
+            keywords: norm.keywords,
             seoScore: 85,
             platform: platform || 'amazon',
             template: template || 'standard',
@@ -342,13 +323,13 @@ router.post('/generate-listing/stream', async (req: Request, res: Response) => {
             isDemo: false,
           },
           complianceResults,
-        })}\n\n`)
+        })
       } else {
-        res.write(`data: ${JSON.stringify({ type: 'error', message: 'Failed to parse AI output' })}\n\n`)
+        sse({ type: 'error', message: 'Failed to parse AI output' })
       }
     } catch (err) {
       console.error('[SSE] Stream error:', err)
-      res.write(`data: ${JSON.stringify({ type: 'error', message: 'Stream error' })}\n\n`)
+      sse({ type: 'error', message: 'Stream error' })
     } finally {
       res.end()
     }
@@ -530,5 +511,19 @@ router.post('/export-listing', (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to export listing', code: 'ERR_EXPORT' })
   }
 })
+
+// POST /api/client-error - Ingest frontend error reports (no auth: errors
+// can happen before login). Fire-and-forget from the frontend; logged here.
+export function reportClientError(req: Request, res: Response) {
+  const { message, stack, source, route, url, userAgent } = req.body || {}
+  if (!message) {
+    res.status(400).json({ error: 'message required' })
+    return
+  }
+  console.error(
+    `[ClientError] ${source || 'app'} | ${route || url || ''} | ${message}\n${stack || ''} UA=${userAgent || ''}`,
+  )
+  res.status(204).end()
+}
 
 export default router

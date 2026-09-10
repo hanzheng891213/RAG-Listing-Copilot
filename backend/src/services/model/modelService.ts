@@ -78,10 +78,20 @@ class ModelService {
     providerId: string,
     apiKey: string,
     messages: Array<{ role: string; content: string }>,
-    options?: { model?: string; temperature?: number; max_tokens?: number },
+    options?: { model?: string; temperature?: number; max_tokens?: number; disableThinking?: boolean },
   ): Promise<{ choices: Array<{ message: { content: string } }>; usage?: { prompt_tokens: number; completion_tokens: number } } | null> {
     const provider = BUILTIN_PROVIDERS.find((p) => p.id === providerId)
     if (!provider || !apiKey) return null
+
+    const payload: Record<string, unknown> = {
+      model: options?.model || provider.models[0]?.id || 'default',
+      messages,
+      temperature: options?.temperature ?? 0.7,
+      max_tokens: options?.max_tokens ?? 4096,
+    }
+    // 推理模型（如 DSV4）会把 max_tokens 大量消耗在 reasoning 上导致输出截断，
+    // 结构化任务直接禁用 thinking 得到即时的纯 JSON 输出
+    if (options?.disableThinking) payload.thinking = { type: 'disabled' }
 
     const response = await fetch(`${provider.baseUrl}/chat/completions`, {
       method: 'POST',
@@ -89,12 +99,7 @@ class ModelService {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        model: options?.model || provider.models[0]?.id || 'default',
-        messages,
-        temperature: options?.temperature ?? 0.7,
-        max_tokens: options?.max_tokens ?? 4096,
-      }),
+      body: JSON.stringify(payload),
     })
 
     if (!response.ok) {
@@ -124,10 +129,19 @@ class ModelService {
     providerId: string,
     apiKey: string,
     messages: Array<{ role: string; content: string }>,
-    options?: { model?: string; temperature?: number; max_tokens?: number },
+    options?: { model?: string; temperature?: number; max_tokens?: number; disableThinking?: boolean },
   ): AsyncGenerator<string, void, unknown> {
     const provider = BUILTIN_PROVIDERS.find((p) => p.id === providerId)
     if (!provider || !apiKey) return
+
+    const payload: Record<string, unknown> = {
+      model: options?.model || provider.models[0]?.id || 'default',
+      messages,
+      temperature: options?.temperature ?? 0.7,
+      max_tokens: options?.max_tokens ?? 4096,
+      stream: true,
+    }
+    if (options?.disableThinking) payload.thinking = { type: 'disabled' }
 
     const response = await fetch(`${provider.baseUrl}/chat/completions`, {
       method: 'POST',
@@ -135,13 +149,7 @@ class ModelService {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        model: options?.model || provider.models[0]?.id || 'default',
-        messages,
-        temperature: options?.temperature ?? 0.7,
-        max_tokens: options?.max_tokens ?? 4096,
-        stream: true,
-      }),
+      body: JSON.stringify(payload),
     })
 
     if (!response.ok) {

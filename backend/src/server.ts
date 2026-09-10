@@ -1,6 +1,6 @@
 import express from 'express'
 import cors from 'cors'
-import apiController from './controllers/apiController.js'
+import apiController, { reportClientError } from './controllers/apiController.js'
 import authController from './controllers/authController.js'
 import modelController from './controllers/modelController.js'
 import knowledgeController from './controllers/knowledgeController.js'
@@ -65,6 +65,9 @@ app.use('/api/models', requireAuth, requireAdmin, modelController)
 
 // Knowledge base routes — public access (no auth required)
 app.use('/api/knowledge', knowledgeController)
+
+// Client error ingestion — public (errors can happen before login), lightly rate-limited
+app.post('/api/client-error', rateLimiter({ windowMs: 60_000, max: 60 }), reportClientError)
 
 // API routes — require auth and track usage
 app.use('/api', rateLimiter({ windowMs: 60_000, max: 60 }), requireAuth, checkApiUsage, apiController)

@@ -9,6 +9,7 @@ import { deepseekService } from './services/deepseek/deepseekService.js'
 import { ragService } from './services/rag/ragService.js'
 import { modelService } from './services/model/modelService.js'
 import { getKnowledgeService, resetKnowledgeService } from './services/knowledge/knowledgeService.js'
+import { extractListingFields, normalizeListingFields, parseFinalJson, streamDemoSse } from './utils/listingStream.js'
 
 type Bindings = {
   KNOWLEDGE_INDEX: any
@@ -264,7 +265,7 @@ app.post('/api/generate-listing', async (c) => {
           { role: 'system', content: systemMsg },
           { role: 'user', content: prompt },
         ],
-        { model, temperature, max_tokens: maxTokens },
+        { model, temperature, max_tokens: maxTokens, disableThinking: (providerId || 'deepseek') === 'deepseek' },
       )
 
       if (!data) {
@@ -564,23 +565,27 @@ app.post('/api/generate-listing/stream', async (c) => {
       } catch { /* ignore */ }
     }
 
+    const sseHeaders = {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    }
+
     if (!isAdmin) {
-      // Non-admin: return demo data
-      return c.json({
-        id: 'gen-' + Date.now(),
-        productId,
-        title: 'Demo Title',
-        bulletPoints: ['Demo point 1', 'Demo point 2'],
-        description: 'Demo description',
-        keywords: ['demo'],
-        seoScore: 85,
-        complianceResults: [],
-        platform: platform || 'amazon',
-        template: template || 'standard',
-        version: 1,
-        createdAt: new Date().toISOString(),
-        isDemo: true,
+      // Non-admin: stream demo data as SSE (frontend expects SSE, not a plain JSON body)
+      const stream = new ReadableStream({
+        async start(controller) {
+          const enc = new TextEncoder()
+          await streamDemoSse((line) => controller.enqueue(enc.encode(line)), {
+            productId,
+            platform,
+            template,
+          })
+          controller.close()
+        },
       })
+      return new Response(stream, { headers: sseHeaders })
     }
 
     if (!apiKey) {
@@ -593,40 +598,17 @@ app.post('/api/generate-listing/stream', async (c) => {
       ? `You are a helpful e-commerce listing assistant. Respond in JSON format with: title, bulletPoints (array of 5 strings), description, keywords (array of strings). All content MUST be written in ${language}.`
       : 'You are a helpful e-commerce listing assistant. Respond in JSON format with: title, bulletPoints (array of 5 strings), description, keywords (array of strings).'
 
-    // SSE streaming response
+    // SSE streaming response: extract fields incrementally as the model generates.
+    // String fields (title/description) stream live; array fields (bulletPoints/keywords)
+    // are sent once when complete to avoid the frontend typewriter restarting.
     const stream = new ReadableStream({
       async start(controller) {
+        const enc = new TextEncoder()
+        const sse = (obj: unknown) =>
+          controller.enqueue(enc.encode(`data: ${JSON.stringify(obj)}\n\n`))
+
         let accumulated = ''
-        let sentFields = new Set<string>()
-        let lastParse: any = null
-
-        function trySendFields() {
-          try {
-            const parsed = JSON.parse(accumulated)
-            if (!parsed || typeof parsed !== 'object') return
-
-            const fields: [string, string][] = [['title', 'string'], ['description', 'string']]
-            const arrayFields: [string, string][] = [['bulletPoints', 'array'], ['keywords', 'array']]
-
-            for (const [field] of fields) {
-              if (!sentFields.has(field) && typeof parsed[field] === 'string' && parsed[field].length > 3) {
-                sentFields.add(field)
-                controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ type: 'field', field, value: parsed[field] })}\n\n`))
-              }
-            }
-
-            for (const [field, type] of arrayFields) {
-              if (!sentFields.has(field) && Array.isArray(parsed[field]) && parsed[field].length > 0) {
-                sentFields.add(field)
-                controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ type: 'field', field, value: parsed[field] })}\n\n`))
-              }
-            }
-
-            lastParse = parsed
-          } catch {
-            // not yet valid JSON
-          }
-        }
+        const sent = new Map<string, unknown>()
 
         try {
           for await (const chunk of modelService.callProviderAPIStream(
@@ -636,28 +618,43 @@ app.post('/api/generate-listing/stream', async (c) => {
               { role: 'system', content: systemMsg },
               { role: 'user', content: prompt },
             ],
-            { model, temperature, max_tokens: maxTokens },
+            { model, temperature, max_tokens: maxTokens, disableThinking: (providerId || 'deepseek') === 'deepseek' },
           )) {
             accumulated += chunk
-            trySendFields()
+            const fields = extractListingFields(accumulated)
+            for (const [field, value] of Object.entries(fields)) {
+              if (field === 'bulletPoints' || field === 'keywords') {
+                if (!sent.has(field)) {
+                  sent.set(field, value)
+                  sse({ type: 'field', field, value })
+                }
+              } else {
+                if (sent.get(field) !== value) {
+                  sent.set(field, value)
+                  sse({ type: 'field', field, value })
+                }
+              }
+            }
           }
 
-          if (lastParse) {
+          const parsed = parseFinalJson(accumulated)
+          if (parsed) {
+            const norm = normalizeListingFields(parsed)
             const ks = initKnowledgeService(c)
             const complianceResults = await ks.checkCompliance(
-              [lastParse.title || '', ...(lastParse.bulletPoints || []), lastParse.description || ''].join(' '),
+              [norm.title, ...norm.bulletPoints, norm.description].join(' '),
               platform,
             )
 
-            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({
+            sse({
               type: 'done',
               listing: {
                 id: 'gen-' + Date.now(),
                 productId,
-                title: lastParse.title,
-                bulletPoints: lastParse.bulletPoints,
-                description: lastParse.description,
-                keywords: lastParse.keywords,
+                title: norm.title,
+                bulletPoints: norm.bulletPoints,
+                description: norm.description,
+                keywords: norm.keywords,
                 seoScore: 85,
                 platform: platform || 'amazon',
                 template: template || 'standard',
@@ -666,31 +663,43 @@ app.post('/api/generate-listing/stream', async (c) => {
                 isDemo: false,
               },
               complianceResults,
-            })}\n\n`))
+            })
           } else {
-            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ type: 'error', message: 'Failed to parse AI output' })}\n\n`))
+            sse({ type: 'error', message: 'Failed to parse AI output' })
           }
         } catch (err) {
           console.error('[SSE] Stream error:', err)
-          controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ type: 'error', message: 'Stream error' })}\n\n`))
+          sse({ type: 'error', message: 'Stream error' })
         } finally {
           controller.close()
         }
       },
     })
 
-    return new Response(stream, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'X-Accel-Buffering': 'no',
-      },
-    })
+    return new Response(stream, { headers: sseHeaders })
   } catch (error) {
     console.error('Stream generate error:', error)
     return c.json({ error: 'Failed to stream generate listing', code: 'ERR_STREAM_GENERATE' }, 500)
   }
+})
+
+// POST /api/client-error - Ingest frontend error reports (no auth: errors
+// can happen before login). Fire-and-forget from the frontend; logged here.
+app.post('/api/client-error', async (c) => {
+  let body: Record<string, unknown> = {}
+  try {
+    body = await c.req.json()
+  } catch {
+    // ignore malformed body
+  }
+  const { message, stack, source, route, url, userAgent } = body
+  if (!message) {
+    return c.json({ error: 'message required' }, 400)
+  }
+  console.error(
+    `[ClientError] ${source || 'app'} | ${route || url || ''} | ${message}\n${stack || ''} UA=${userAgent || ''}`,
+  )
+  return c.body(null, 204)
 })
 
 // ════════════════════════════════════════════════════════════════════
