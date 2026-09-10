@@ -184,6 +184,9 @@ watch(() => store.products, () => {
         <div class="drawer-body">
           <div class="drawer-header">
             <el-tag type="info" effect="plain">{{ getProductLabel(drawerProduct) }}</el-tag>
+            <el-tag v-if="drawerProduct.sourceSheet" type="success" effect="plain">
+              {{ drawerProduct.sourceSheet }}
+            </el-tag>
           </div>
           <div class="drawer-fields">
             <div v-for="(value, key) in draftData" :key="key" class="drawer-field">
@@ -263,7 +266,7 @@ watch(() => store.products, () => {
 
 /* 抽屉样式 */
 .drawer-body { padding: 0 4px; }
-.drawer-header { margin-bottom: 24px; }
+.drawer-header { display: flex; gap: 8px; margin-bottom: 24px; }
 .drawer-fields { display: flex; flex-direction: column; gap: 18px; }
 .drawer-field { display: flex; flex-direction: column; gap: 6px; }
 .drawer-label { font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }

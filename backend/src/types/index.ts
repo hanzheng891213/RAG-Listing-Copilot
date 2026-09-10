@@ -1,5 +1,7 @@
 export interface SupplierProduct {
   id: string
+  /** Worksheet the product was read from; absent for CSV/TXT imports. */
+  sourceSheet?: string
   rawData: Record<string, string>
 }
 
