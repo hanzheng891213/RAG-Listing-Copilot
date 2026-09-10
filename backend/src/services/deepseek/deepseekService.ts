@@ -33,15 +33,31 @@ export class DeepSeekService {
     return this.generateDemoListing(product, platform, template, language)
   }
 
+  /**
+   * Query used to retrieve platform rules from the knowledge base. Joins every
+   * populated product field so retrieval sees specifications and category, not
+   * just whichever value happens to come first.
+   */
+  buildRetrievalQuery(product: SupplierProduct): string {
+    const values = Object.values(product.rawData).filter((v): v is string => !!v)
+    return values.join(' ').slice(0, 500).trim()
+  }
+
+  /**
+   * @param knowledgeContext Retrieved knowledge-base excerpts to ground the
+   *   prompt. When omitted the caller has no knowledge service available, so
+   *   the prompt falls back to the built-in rule list.
+   */
   buildPromptForProvider(
     product: SupplierProduct,
     platform: Platform,
-    _template?: string,
+    template?: string,
     language?: string,
+    knowledgeContext?: string,
   ): string {
     const label = getProductLabel(product)
     const docs = ragService.searchRelevantDocs(label, platform)
-    return this.buildPrompt(product, platform, _template || 'standard', docs, language)
+    return this.buildPrompt(product, platform, template || 'standard', docs, language, knowledgeContext)
   }
 
   private buildPrompt(
@@ -50,10 +66,15 @@ export class DeepSeekService {
     _template: string,
     docs: ReturnType<typeof ragService.searchRelevantDocs>,
     language?: string,
+    knowledgeContext?: string,
   ): string {
     const langInstruction = language && language !== 'english'
       ? `\n\nIMPORTANT: All generated content (title, bullet points, description, keywords) MUST be written entirely in ${language}. Do not use English.`
       : ''
+
+    const rulesSection = knowledgeContext?.trim()
+      ? `Platform Rules to Follow (retrieved from the knowledge base — treat as authoritative for ${platform}):\n${knowledgeContext}`
+      : `Platform Rules to Follow:\n${docs.platformRules.map((r) => `- ${r}`).join('\n')}`
 
     return `You are an expert e-commerce listing optimizer for ${platform}.
 
@@ -62,8 +83,7 @@ ${JSON.stringify(product.rawData, null, 2)}
 
 Please analyze this data to identify the product name, description, price, specifications, category, and any other relevant attributes. Then generate an optimized e-commerce listing.
 
-Platform Rules to Follow:
-${docs.platformRules.map((r) => `- ${r}`).join('\n')}
+${rulesSection}
 
 Restricted Keywords to Avoid:
 ${docs.restrictedKeywords.join(', ')}

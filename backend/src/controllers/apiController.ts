@@ -20,6 +20,25 @@ function getKs(): KnowledgeService {
   return getKnowledgeService() // Express: no Cloudflare bindings → local fallback
 }
 
+/**
+ * Retrieves the platform rules matching this product, then builds the
+ * generation prompt around them. Retrieval failing only costs grounding — the
+ * prompt builder falls back to its built-in rule list.
+ */
+async function buildGroundedPrompt(
+  productData: any,
+  platform: any,
+  template: any,
+  language: any,
+): Promise<string> {
+  const knowledge = await getKs().buildPromptContext(
+    deepseekService.buildRetrievalQuery(productData),
+    { platform },
+  )
+  console.log(`[Generate] Knowledge retrieval: ${knowledge.length} chars (platform=${platform})`)
+  return deepseekService.buildPromptForProvider(productData, platform, template, language, knowledge)
+}
+
 function isAdmin(req: Request): boolean {
   return ((req as any).user as JwtPayload)?.role === 'admin'
 }
@@ -103,7 +122,7 @@ router.post('/generate-listing', async (req: Request, res: Response) => {
 
     console.log('[API] Admin generate — provider:', providerId, 'model:', model)
     try {
-      const prompt = deepseekService.buildPromptForProvider(productData, platform as Platform, template, language)
+      const prompt = await buildGroundedPrompt(productData, platform, template, language)
 
       const systemMsg = language && language !== 'english'
         ? `You are a helpful e-commerce listing assistant. Respond in JSON format with: title, bulletPoints (array of 5 strings), description, keywords (array of strings). All content MUST be written in ${language}.`
@@ -265,7 +284,7 @@ router.post('/generate-listing/stream', async (req: Request, res: Response) => {
       return
     }
 
-    const prompt = deepseekService.buildPromptForProvider(productData, platform as Platform, template, language)
+    const prompt = await buildGroundedPrompt(productData, platform, template, language)
 
     const systemMsg = language && language !== 'english'
       ? `You are a helpful e-commerce listing assistant. Respond in JSON format with: title, bulletPoints (array of 5 strings), description, keywords (array of strings). All content MUST be written in ${language}.`

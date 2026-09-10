@@ -40,6 +40,27 @@ function initKnowledgeService(c: any) {
   })
 }
 
+/**
+ * Retrieves the platform rules matching this product, then builds the
+ * generation prompt around them. Retrieval failing only costs grounding — the
+ * prompt builder falls back to its built-in rule list.
+ */
+async function buildGroundedPrompt(
+  c: any,
+  productData: any,
+  platform: any,
+  template: any,
+  language: any,
+): Promise<string> {
+  const ks = initKnowledgeService(c)
+  const knowledge = await ks.buildPromptContext(
+    deepseekService.buildRetrievalQuery(productData),
+    { platform },
+  )
+  console.log(`[Generate] Knowledge retrieval: ${knowledge.length} chars (platform=${platform})`)
+  return deepseekService.buildPromptForProvider(productData, platform, template, language, knowledge)
+}
+
 // ─── In-memory user store ──────────────────────────────────────────
 const userStore = new Map<string, User>()
 
@@ -259,7 +280,7 @@ app.post('/api/generate-listing', async (c) => {
 
     console.log('[API] Admin generate — provider:', providerId, 'model:', model)
     try {
-      const prompt = deepseekService.buildPromptForProvider(productData, platform as Platform, template, language)
+      const prompt = await buildGroundedPrompt(c, productData, platform, template, language)
 
       const systemMsg = language && language !== 'english'
         ? `You are a helpful e-commerce listing assistant. Respond in JSON format with: title, bulletPoints (array of 5 strings), description, keywords (array of strings). All content MUST be written in ${language}.`
@@ -605,7 +626,7 @@ app.post('/api/generate-listing/stream', async (c) => {
       return c.json({ error: 'API key is required', code: 'ERR_NO_API_KEY' }, 400)
     }
 
-    const prompt = deepseekService.buildPromptForProvider(productData, platform as Platform, template, language)
+    const prompt = await buildGroundedPrompt(c, productData, platform, template, language)
 
     const systemMsg = language && language !== 'english'
       ? `You are a helpful e-commerce listing assistant. Respond in JSON format with: title, bulletPoints (array of 5 strings), description, keywords (array of strings). All content MUST be written in ${language}.`
