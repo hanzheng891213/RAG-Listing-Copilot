@@ -3,6 +3,9 @@
   "private": true,
   "scripts": {
     "postinstall": "cd backend && npm ci && cd ../frontend && npm ci",
+    "dev": "concurrently -k -n backend,frontend -c blue,green \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
     "build": "cd frontend && npm run build",
     "deploy": "npm run build && wrangler deploy",
     "preview": "wrangler dev"
@@ -15,6 +18,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "concurrently": "^10.0.5",
     "wrangler": "^4.96.0"
   }
 }
