@@ -24,6 +24,13 @@ function isAdmin(req: Request): boolean {
   return ((req as any).user as JwtPayload)?.role === 'admin'
 }
 
+// GET /api/upload-supplier - endpoint-existence probe for the frontend.
+// Express routes HEAD to GET handlers, so this answers both; without it the
+// frontend's HEAD probe gets a 404 and aborts the upload.
+router.get('/upload-supplier', (_req: Request, res: Response) => {
+  res.status(204).end()
+})
+
 // POST /api/upload-supplier - Upload and parse supplier file
 router.post('/upload-supplier', upload.single('file'), async (req: Request, res: Response) => {
   try {

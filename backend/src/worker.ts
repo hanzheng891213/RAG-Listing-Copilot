@@ -180,8 +180,11 @@ app.get('/api/models/usage/stats', (c) => {
 // API routes
 // ════════════════════════════════════════════════════════════════════
 
-// HEAD /api/upload-supplier - frontend endpoint detection
-app.on('HEAD', '/api/upload-supplier', (c) => c.body(null, 204))
+// GET /api/upload-supplier - endpoint-existence probe for the frontend.
+// Registered as GET on purpose: Hono has no app.head(), and app.on('HEAD', …)
+// creates a route that never matches, because Hono routes HEAD requests to GET
+// handlers. A GET route therefore answers both HEAD and GET.
+app.get('/api/upload-supplier', (c) => c.body(null, 204))
 
 // POST /api/upload-supplier - Upload and parse supplier file
 app.post('/api/upload-supplier', async (c) => {
