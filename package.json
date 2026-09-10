@@ -8,7 +8,8 @@
     "dev:frontend": "cd frontend && npm run dev",
     "build": "cd frontend && npm run build",
     "deploy": "npm run build && wrangler deploy",
-    "preview": "wrangler dev"
+    "preview": "wrangler dev",
+    "seed:generate": "node scripts/generate-seed-data.mjs"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

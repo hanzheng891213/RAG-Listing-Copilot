@@ -90,6 +90,19 @@ function sanitizeUser(user: User) {
   }
 }
 
+/** True when the request carries a valid admin bearer token. */
+function isAdminRequest(c: any): boolean {
+  const authHeader = c.req.header('Authorization')
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+  if (!token) return false
+  try {
+    const payload = jwtSign.verify(token, JWT_SECRET) as JwtPayload
+    return payload.role === 'admin'
+  } catch {
+    return false
+  }
+}
+
 // ════════════════════════════════════════════════════════════════════
 // Health & Info
 // ════════════════════════════════════════════════════════════════════
@@ -221,16 +234,7 @@ app.post('/api/generate-listing', async (c) => {
       return c.json({ error: 'productData is required', code: 'ERR_MISSING_PRODUCT_DATA' }, 400)
     }
 
-    // Get user role from JWT if present
-    const authHeader = c.req.header('Authorization')
-    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
-    let isAdmin = false
-    if (token) {
-      try {
-        const payload = jwtSign.verify(token, JWT_SECRET) as JwtPayload
-        isAdmin = payload.role === 'admin'
-      } catch { /* ignore */ }
-    }
+    const isAdmin = isAdminRequest(c)
 
     // Non-admin: demo data
     if (!isAdmin) {
@@ -434,6 +438,10 @@ app.get('/api/knowledge/documents/:id', async (c) => {
 
 // POST /api/knowledge/upload - Upload & ingest document
 app.post('/api/knowledge/upload', async (c) => {
+  if (!isAdminRequest(c)) {
+    return c.json({ error: 'Admin access required', code: 'ERR_ADMIN_REQUIRED' }, 403)
+  }
+
   try {
     const formData = await c.req.parseBody()
     const file = formData['file'] as File | undefined
@@ -483,6 +491,10 @@ app.post('/api/knowledge/upload', async (c) => {
 
 // DELETE /api/knowledge/documents/:id - Delete document
 app.delete('/api/knowledge/documents/:id', async (c) => {
+  if (!isAdminRequest(c)) {
+    return c.json({ error: 'Admin access required', code: 'ERR_ADMIN_REQUIRED' }, 403)
+  }
+
   try {
     const id = c.req.param('id')
     const ks = initKnowledgeService(c)
@@ -506,16 +518,19 @@ app.get('/api/knowledge/stats', async (c) => {
   }
 })
 
-// POST /api/knowledge/seed - Seed knowledge base from local markdown files
+// POST /api/knowledge/seed - Ingest the bundled platform policy documents
 app.post('/api/knowledge/seed', async (c) => {
+  if (!isAdminRequest(c)) {
+    return c.json({ error: 'Admin access required', code: 'ERR_ADMIN_REQUIRED' }, 403)
+  }
+
   try {
-    // Dynamic import for seed (uses fs, only works in wrangler dev / Express)
     const { seedKnowledgeBase } = await import('./services/knowledge/seed.js')
-    const count = await seedKnowledgeBase()
+    const count = await seedKnowledgeBase(initKnowledgeService(c))
     return c.json({ success: true, count })
   } catch (error) {
     console.error('Knowledge seed error:', error)
-    return c.json({ error: 'Seed failed (only available in dev mode)', code: 'ERR_KNOWLEDGE_SEED' }, 500)
+    return c.json({ error: 'Seed failed', code: 'ERR_KNOWLEDGE_SEED' }, 500)
   }
 })
 
@@ -554,16 +569,7 @@ app.post('/api/generate-listing/stream', async (c) => {
       return c.json({ error: 'productData is required', code: 'ERR_MISSING_PRODUCT_DATA' }, 400)
     }
 
-    // Get user role from JWT
-    const authHeader = c.req.header('Authorization')
-    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
-    let isAdmin = false
-    if (token) {
-      try {
-        const payload = jwtSign.verify(token, JWT_SECRET) as JwtPayload
-        isAdmin = payload.role === 'admin'
-      } catch { /* ignore */ }
-    }
+    const isAdmin = isAdminRequest(c)
 
     const sseHeaders = {
       'Content-Type': 'text/event-stream',

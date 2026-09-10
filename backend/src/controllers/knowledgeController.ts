@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express'
 import multer from 'multer'
 import { getKnowledgeService, type KnowledgeService } from '../services/knowledge/knowledgeService.js'
+import { requireAuth, requireAdmin } from '../middleware/authMiddleware.js'
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -57,7 +58,8 @@ router.get('/documents/:id', async (req: Request, res: Response) => {
   }
 })
 
-router.post('/upload', upload.single('file'), async (req: Request, res: Response) => {
+// Writes are admin-only; reads above stay public.
+router.post('/upload', requireAuth, requireAdmin, upload.single('file'), async (req: Request, res: Response) => {
   try {
     const { title, category, platform, tags: tagsStr } = req.body
     let content: string
@@ -120,7 +122,7 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
   }
 })
 
-router.delete('/documents/:id', async (req: Request, res: Response) => {
+router.delete('/documents/:id', requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
     const ks = getKs()
     await ks.deleteDocument(req.params.id as string)
