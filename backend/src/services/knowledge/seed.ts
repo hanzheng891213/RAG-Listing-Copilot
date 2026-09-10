@@ -10,8 +10,9 @@ import { getKnowledgeService, type KnowledgeService } from './knowledgeService.j
 import { SEED_DOCS } from './seedData.js'
 
 /**
- * Ingest the seed documents. Returns the number of documents in the
- * platform_rules category afterwards (0 if seeding failed).
+ * Ingest any seed document not already present, matched by title, so adding a
+ * new platform to seedData.ts lands without wiping the existing base.
+ * Returns the total number of platform_rules documents afterwards.
  *
  * Callers on the Worker must pass the binding-initialised service — the
  * no-argument default is the in-memory local-dev instance.
@@ -20,12 +21,15 @@ export async function seedKnowledgeBase(
   ks: KnowledgeService = getKnowledgeService(),
 ): Promise<number> {
   const existingDocs = await ks.listDocuments('platform_rules')
-  if (existingDocs.length > 0) {
-    console.log(`[Seed] Knowledge base already has ${existingDocs.length} documents. Skipping.`)
+  const existingTitles = new Set(existingDocs.map((d) => d.title))
+
+  const missing = SEED_DOCS.filter((doc) => !existingTitles.has(doc.title))
+  if (missing.length === 0) {
+    console.log(`[Seed] All ${SEED_DOCS.length} seed documents already present. Skipping.`)
     return existingDocs.length
   }
 
-  const count = await ks.seedDocuments(SEED_DOCS)
-  console.log(`[Seed] Successfully ingested ${count} documents into knowledge base.`)
-  return count
+  const count = await ks.seedDocuments(missing)
+  console.log(`[Seed] Ingested ${count} new documents (${existingDocs.length} already present).`)
+  return existingDocs.length + count
 }
