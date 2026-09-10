@@ -1,4 +1,4 @@
-import type { SupplierProduct, GeneratedListing, Platform, ComplianceResult } from '../types/index.ts'
+import type { SupplierProduct, GeneratedListing, Platform, ComplianceResult } from '../../types/index.ts'
 import { ragService } from '../rag/ragService.ts'
 import { v4 as uuid } from 'uuid'
 
