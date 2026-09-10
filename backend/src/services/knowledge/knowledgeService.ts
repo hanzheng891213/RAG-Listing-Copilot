@@ -27,6 +27,8 @@ interface DocRecord {
   platform: string
   tags: string
   content: string
+  titleZh: string
+  contentZh: string
   fileType: string
   fileSize: number
   chunkCount: number
@@ -103,6 +105,8 @@ export class KnowledgeService {
       tags: string[]
       fileType?: string
       fileSize?: number
+      titleZh?: string
+      contentZh?: string
     },
   ): Promise<KnowledgeDocument> {
     const docId = uuid()
@@ -135,6 +139,8 @@ export class KnowledgeService {
       platform: metadata.platform ?? '',
       tags: JSON.stringify(metadata.tags),
       content,
+      titleZh: metadata.titleZh ?? '',
+      contentZh: metadata.contentZh ?? '',
       fileType: metadata.fileType ?? 'txt',
       fileSize: metadata.fileSize ?? Buffer.byteLength(content, 'utf8'),
       chunkCount: chunks.length,
@@ -145,8 +151,8 @@ export class KnowledgeService {
     if (this.d1Binding) {
       await this.d1Binding
         .prepare(
-          `INSERT INTO documents (id, title, category, platform, tags, content, file_type, file_size, chunk_count, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO documents (id, title, category, platform, tags, content, title_zh, content_zh, file_type, file_size, chunk_count, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .bind(
           docRecord.id,
@@ -155,6 +161,8 @@ export class KnowledgeService {
           docRecord.platform,
           docRecord.tags,
           docRecord.content,
+          docRecord.titleZh,
+          docRecord.contentZh,
           docRecord.fileType,
           docRecord.fileSize,
           docRecord.chunkCount,
@@ -422,6 +430,8 @@ export class KnowledgeService {
       category: KnowledgeCategory
       platform?: Platform
       tags: string[]
+      titleZh?: string
+      contentZh?: string
     }>,
   ): Promise<number> {
     let count = 0
@@ -432,6 +442,8 @@ export class KnowledgeService {
           category: doc.category,
           platform: doc.platform,
           tags: doc.tags,
+          titleZh: doc.titleZh,
+          contentZh: doc.contentZh,
           fileType: 'md',
         })
         count++
@@ -458,6 +470,8 @@ export class KnowledgeService {
       platform: (doc.platform || undefined) as Platform | undefined,
       tags: safeJsonParse(doc.tags, []),
       content: doc.content,
+      titleZh: doc.titleZh || undefined,
+      contentZh: doc.contentZh || undefined,
       fileType: doc.fileType,
       fileSize: doc.fileSize,
       chunkCount: doc.chunkCount,
@@ -474,6 +488,8 @@ export class KnowledgeService {
       platform: row.platform ?? '',
       tags: row.tags ?? '[]',
       content: row.content ?? '',
+      titleZh: row.title_zh ?? '',
+      contentZh: row.content_zh ?? '',
       fileType: row.file_type ?? 'txt',
       fileSize: row.file_size ?? 0,
       chunkCount: row.chunk_count ?? 0,

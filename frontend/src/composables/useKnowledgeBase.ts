@@ -19,9 +19,12 @@ export function useKnowledgeBase() {
     if (!doc.content) {
       contentLoading.value = true
       try {
-        // 种子文档 ID 与服务端不一致，用标题匹配
+        // 种子文档 ID 与服务端不一致，用标题匹配。
+        // doc.title 在当前语言下可能是中文，故两种标题都要比对。
         const res = await listDocuments()
-        const match = res.documents?.find((d: any) => d.title === doc.title)
+        const match = res.documents?.find(
+          (d: any) => d.title === doc.title || d.titleZh === doc.title,
+        )
         if (match?.content) {
           selectedDoc.value = { ...doc, content: match.content }
           store.updateDocumentContent(doc.id, match.content)

@@ -58,7 +58,16 @@ export interface KnowledgeDocument {
   category: KnowledgeCategory
   platform?: Platform
   tags: string[]
+  /**
+   * Canonical English body — this is what gets embedded and retrieved. The
+   * embedding model is English-only, so the Chinese body is stored alongside
+   * for display rather than being indexed.
+   */
   content: string
+  /** Chinese display title, when the document has one. */
+  titleZh?: string
+  /** Chinese display body, when the document has one. */
+  contentZh?: string
   fileType: string
   fileSize: number
   chunkCount: number

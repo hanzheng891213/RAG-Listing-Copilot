@@ -21,7 +21,7 @@ const SEED_DOCS_EN: SeedDoc[] = [
   { id: 'seed-1', title: 'Amazon Selling Policies & Code of Conduct', excerpt: 'Complete seller code of conduct covering accurate information, fair conduct, review manipulation, communications, and multiple account policies.', tags: ['amazon', 'code-of-conduct', 'compliance'], category: 'platform_rules', platform: 'amazon', fileType: 'md', fileSize: 3200 },
   { id: 'seed-2', title: 'Amazon Prohibited & Restricted Products', excerpt: 'Categories of prohibited and restricted products, ungating requirements, prohibited claims and keywords, and marketplace-specific variations.', tags: ['amazon', 'restricted', 'compliance'], category: 'platform_rules', platform: 'amazon', fileType: 'md', fileSize: 4500 },
   { id: 'seed-3', title: 'Amazon Product Detail Page Rules', excerpt: 'Title, image, bullet point, description, and variation requirements with compliance checklist.', tags: ['amazon', 'listing', 'detail-page'], category: 'platform_rules', platform: 'amazon', fileType: 'md', fileSize: 5500 },
-  { id: 'seed-4', title: 'Product Safety & Compliance Certifications', excerpt: 'FDA, CPC, CE, FCC certification requirements by product category and marketplace.', tags: ['compliance', 'safety', 'certification'], category: 'platform_rules', platform: 'amazon', fileType: 'md', fileSize: 4800 },
+  { id: 'seed-4', title: 'Product Safety & Compliance', excerpt: 'FDA, CPC, CE, FCC certification requirements by product category and marketplace.', tags: ['compliance', 'safety', 'certification'], category: 'platform_rules', platform: 'amazon', fileType: 'md', fileSize: 4800 },
   { id: 'seed-5', title: 'Category Listing Restrictions', excerpt: 'Gated categories including Jewelry, Beauty, Baby, Automotive with approval requirements and application process.', tags: ['categories', 'gated', 'approval'], category: 'platform_rules', platform: 'amazon', fileType: 'md', fileSize: 6200 },
   { id: 'seed-8', title: 'Restricted Keywords Database', excerpt: 'Database of prohibited claims and restricted keywords across all platforms.', tags: ['keywords', 'restricted', 'all-platforms'], category: 'platform_rules', platform: 'amazon', fileType: 'md', fileSize: 3800 },
 ]
@@ -81,13 +81,36 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     documents.value = [...newSeeds, ...userDocs]
   }
 
-  /** Documents matching the platform filter. Shared by the rendered list and
-   *  the tab badges so a badge can never disagree with the tab's contents. */
-  const platformFiltered = computed(() =>
-    activePlatform.value
+  /** Tracks the active locale so documents re-resolve when it changes. */
+  const activeLocale = computed(() => i18n.global.locale.value as string)
+
+  /**
+   * Resolve a document to the active locale. The stored body is the canonical
+   * English one (that's what got embedded); a translated body, when present,
+   * is shown instead. Falls back to English rather than showing nothing.
+   */
+  function localizeDoc(d: KnowledgeDocument): KnowledgeDocument {
+    const zh = activeLocale.value === 'zh'
+    const title = (zh && d.titleZh) || d.title
+    const content = (zh && d.contentZh) || d.content
+    if (title === d.title && content === d.content) return d
+    return {
+      ...d,
+      title,
+      content,
+      // The excerpt must follow whichever body is on screen.
+      ...(content ? { excerpt: truncate(toPlainText(content), 200) } : {}),
+    }
+  }
+
+  /** Documents matching the platform filter, localized. Shared by the rendered
+   *  list and the tab badges so a badge can never disagree with the tab. */
+  const platformFiltered = computed(() => {
+    const byPlatform = activePlatform.value
       ? documents.value.filter((d) => d.platform === activePlatform.value)
-      : documents.value,
-  )
+      : documents.value
+    return byPlatform.map(localizeDoc)
+  })
 
   const filteredDocuments = computed(() => {
     let filtered = platformFiltered.value.filter((d) => d.category === activeTab.value)
@@ -155,11 +178,22 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
         chunkCount: d.chunkCount ?? 1,
       }))
 
+      // A local seed stub and its server document carry different titles
+      // depending on the active language, so match on either one.
+      const titlesOf = (d: any): string[] => [d.title, d.titleZh].filter(Boolean)
+      const sameDoc = (a: any, b: any): boolean => {
+        const bTitles = new Set(titlesOf(b))
+        return titlesOf(a).some((t) => bTitles.has(t))
+      }
+
       const updatedDocs = documents.value.map((localDoc) => {
-        const serverDoc = serverDocs.find((sd: any) => sd.title === localDoc.title)
+        const serverDoc = serverDocs.find((sd: any) => sameDoc(sd, localDoc))
         if (serverDoc) {
           return {
             ...localDoc,
+            title: serverDoc.title,
+            titleZh: serverDoc.titleZh,
+            contentZh: serverDoc.contentZh,
             content: serverDoc.content ?? localDoc.content,
             chunkCount: serverDoc.chunkCount ?? localDoc.chunkCount,
             uploadedAt: serverDoc.uploadedAt ?? localDoc.uploadedAt,
@@ -169,9 +203,9 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
         return localDoc
       })
 
-      const serverDocTitles = new Set(serverDocs.map((sd: any) => sd.title))
-      const localDocTitles = new Set(documents.value.map((d) => d.title))
-      const newServerDocs = serverDocs.filter((sd: any) => !localDocTitles.has(sd.title))
+      const newServerDocs = serverDocs.filter(
+        (sd: any) => !documents.value.some((localDoc) => sameDoc(sd, localDoc)),
+      )
 
       documents.value = [...updatedDocs, ...newServerDocs]
       serverAvailable.value = true
@@ -187,14 +221,14 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     try {
       const res = await searchKnowledge(q, platform)
       results.value = (res.results ?? []).map((r: any) => ({
-        document: {
+        document: localizeDoc({
           ...r.document,
           excerpt: r.document.content
             ? truncate(toPlainText(r.document.content), 200)
             : r.document.excerpt ?? '',
           uploadedAt: r.document.createdAt ?? r.document.uploadedAt ?? '',
           chunkCount: r.document.chunkCount ?? 1,
-        },
+        }),
         score: r.score ?? 0,
       }))
       serverAvailable.value = true
