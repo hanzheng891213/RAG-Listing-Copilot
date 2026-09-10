@@ -42,6 +42,46 @@ const SEED_METADATA = {
     platform: 'amazon',
     tags: ['品类', '受限', '批准'],
   },
+  'shopify-01-product-listing-rules': {
+    title: 'Shopify 商品上架与详情页规范',
+    platform: 'shopify',
+    tags: ['Shopify', '上架', '详情页'],
+  },
+  'shopify-02-seo-and-content': {
+    title: 'Shopify SEO 与内容规范',
+    platform: 'shopify',
+    tags: ['Shopify', 'SEO', '内容'],
+  },
+  'shopify-03-media-and-variants': {
+    title: 'Shopify 图片媒体与商品变体规范',
+    platform: 'shopify',
+    tags: ['Shopify', '图片', '变体'],
+  },
+  'shopify-04-prohibited-restricted-products': {
+    title: 'Shopify 禁售与受限商品政策',
+    platform: 'shopify',
+    tags: ['Shopify', '受限', '合规'],
+  },
+  'ebay-01-listing-policies': {
+    title: 'eBay 上架政策与卖家标准',
+    platform: 'ebay',
+    tags: ['eBay', '上架', '卖家标准'],
+  },
+  'ebay-02-title-and-item-specifics': {
+    title: 'eBay 标题与物品属性规范',
+    platform: 'ebay',
+    tags: ['eBay', '标题', '物品属性'],
+  },
+  'ebay-03-images-and-description': {
+    title: 'eBay 图片与描述规范',
+    platform: 'ebay',
+    tags: ['eBay', '图片', '描述'],
+  },
+  'ebay-04-prohibited-restricted-products': {
+    title: 'eBay 禁售与受限商品政策',
+    platform: 'ebay',
+    tags: ['eBay', '受限', '合规'],
+  },
 }
 
 const files = readdirSync(KB_DIR).filter((f) => f.endsWith('.md')).sort()
