@@ -14,7 +14,7 @@ export interface SeedProgress {
   ingested: number
   /** Seed documents still missing — call again to continue. 0 means done. */
   remaining: number
-  /** Documents in platform_rules after this call. */
+  /** Documents in the knowledge base after this call. */
   total: number
 }
 
@@ -38,7 +38,8 @@ export async function seedKnowledgeBase(
   ks: KnowledgeService = getKnowledgeService(),
   options?: { limit?: number },
 ): Promise<SeedProgress> {
-  const existingDocs = await ks.listDocuments('platform_rules')
+  // Across every category — seed docs include templates, not just platform rules.
+  const existingDocs = await ks.listDocuments()
   const existingTitles = new Set(existingDocs.map((d) => d.title))
 
   const missing = SEED_DOCS.filter((doc) => !existingTitles.has(doc.title))
