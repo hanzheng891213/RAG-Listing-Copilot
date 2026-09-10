@@ -17,6 +17,7 @@ index_name = "knowledge-chunks"
 binding = "KNOWLEDGE_DB"
 database_name = "rag-listing-copilot"
 database_id = "2ab38a1a-72b5-4cc7-be75-eb1c07931ec6"
+migrations_dir = "../migrations"
 
 # ─── Production Environment ─────────────────────────────────────────
 [env.production]
@@ -25,6 +26,9 @@ vars = { JWT_SECRET = "rag-copilot-jwt-secret-2026-dev" }
 [env.production.ai]
 binding = "AI"
 
+# See the note in the root wrangler.toml: metadata filtering needs an explicit
+# metadata index on the property, created via `wrangler vectorize
+# create-metadata-index <index> --property-name=platform --type=string`.
 [[env.production.vectorize]]
 binding = "KNOWLEDGE_INDEX"
 index_name = "knowledge-chunks-prod"
@@ -33,3 +37,4 @@ index_name = "knowledge-chunks-prod"
 binding = "KNOWLEDGE_DB"
 database_name = "rag-listing-copilot"
 database_id = "2ab38a1a-72b5-4cc7-be75-eb1c07931ec6"
+migrations_dir = "../migrations"

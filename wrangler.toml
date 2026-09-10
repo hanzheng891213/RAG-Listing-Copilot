@@ -13,6 +13,11 @@ command = "npm run build"
 [ai]
 binding = "AI"
 
+# Metadata filtering is a no-op until the property has a metadata index — a
+# filter on an unindexed property silently matches zero vectors. After creating
+# or recreating this index, run:
+#   npx wrangler vectorize create-metadata-index knowledge-chunks-prod --property-name=platform --type=string
+# Vectors upserted before the index existed stay unfilterable until re-upserted.
 [[vectorize]]
 binding = "KNOWLEDGE_INDEX"
 index_name = "knowledge-chunks-prod"
@@ -21,6 +26,7 @@ index_name = "knowledge-chunks-prod"
 binding = "KNOWLEDGE_DB"
 database_name = "rag-listing-copilot"
 database_id = "2ab38a1a-72b5-4cc7-be75-eb1c07931ec6"
+migrations_dir = "migrations"
 
 [vars]
 JWT_SECRET = "rag-copilot-jwt-secret-2026-dev"

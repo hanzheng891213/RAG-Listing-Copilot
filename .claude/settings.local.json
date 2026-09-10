@@ -65,7 +65,10 @@
       "Bash(echo \"EXIT $?\")",
       "PowerShell(Get-NetTCPConnection *)",
       "PowerShell(Stop-Process *)",
-      "Bash(grep -iE \"migrat|schema|\\\\.sql$\")"
+      "Bash(grep -iE \"migrat|schema|\\\\.sql$\")",
+      "Read(//tmp/**)",
+      "Bash(rm -f /tmp/o)",
+      "WebFetch(domain:developers.cloudflare.com)"
     ]
   }
 }
