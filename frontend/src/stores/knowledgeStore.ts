@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { KnowledgeDocument, KnowledgeCategory, SearchResult } from '@/types/knowledge'
-import { generateId } from '@/utils/formatters'
+import { generateId, truncate } from '@/utils/formatters'
+import { toPlainText } from '@/utils/markdown'
 import i18n from '@/locales'
 import { listDocuments, searchKnowledge, uploadDocument, deleteDocument } from '@/api/knowledge'
 
@@ -149,7 +150,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
       const res = await listDocuments()
       const serverDocs = (res.documents ?? []).map((d: any) => ({
         ...d,
-        excerpt: d.content?.slice(0, 200) ?? '',
+        excerpt: truncate(toPlainText(d.content ?? ''), 200),
         uploadedAt: d.createdAt ?? d.uploadedAt,
         chunkCount: d.chunkCount ?? 1,
       }))
@@ -188,7 +189,9 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
       results.value = (res.results ?? []).map((r: any) => ({
         document: {
           ...r.document,
-          excerpt: r.document.content?.slice(0, 200) ?? r.document.excerpt ?? '',
+          excerpt: r.document.content
+            ? truncate(toPlainText(r.document.content), 200)
+            : r.document.excerpt ?? '',
           uploadedAt: r.document.createdAt ?? r.document.uploadedAt ?? '',
           chunkCount: r.document.chunkCount ?? 1,
         },

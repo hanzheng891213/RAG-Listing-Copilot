@@ -4,6 +4,8 @@ import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import type { KnowledgeCategory } from '@/types/knowledge'
 import { KNOWLEDGE_CATEGORIES, PLATFORMS } from '@/utils/constants'
+import { truncate } from '@/utils/formatters'
+import { toPlainText } from '@/utils/markdown'
 import { useKnowledgeStore } from '@/stores/knowledgeStore'
 
 const props = defineProps<{ visible: boolean }>()
@@ -65,7 +67,7 @@ async function handleSubmit() {
         title: form.value.title.trim(),
         category: form.value.category,
         tags: form.value.tags,
-        excerpt: form.value.description.trim() || form.value.content?.slice(0, 200) || '',
+        excerpt: form.value.description.trim() || truncate(toPlainText(form.value.content ?? ''), 200),
         content: form.value.content || '',
         platform: form.value.platform || undefined,
         fileType: form.value.file?.name.split('.').pop() || 'txt',
