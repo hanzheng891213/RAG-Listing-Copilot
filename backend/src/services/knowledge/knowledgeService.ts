@@ -68,6 +68,10 @@ class DocumentStore {
 
 // ─── Knowledge Service ────────────────────────────────────────────────
 
+/** Chunks injected into a generation prompt. Each is ~512 chars, so this
+ *  keeps the retrieved context to roughly a couple of thousand characters. */
+const DEFAULT_CONTEXT_CHUNKS = 4
+
 export class KnowledgeService {
   private embedder: Embedder
   private vectorStore: VectorStore
@@ -214,13 +218,18 @@ export class KnowledgeService {
       }
       if (!doc) continue
 
+      const chunkIndex = parseInt(r.metadata.chunkIndex ?? '0')
+      // Only the matched chunk is stored in the vector record, so recover its
+      // text by re-running the (deterministic) chunker over the document.
+      const chunkText = chunkMarkdown(doc.content)[chunkIndex] ?? ''
+
       searchResults.push({
         score: r.score,
         chunk: {
           id: r.id,
           documentId: docId,
-          content: '', // content is in the document
-          chunkIndex: parseInt(r.metadata.chunkIndex ?? '0'),
+          content: chunkText,
+          chunkIndex,
           metadata: {
             platform: doc.platform,
             category: doc.category,
@@ -232,6 +241,39 @@ export class KnowledgeService {
     }
 
     return searchResults
+  }
+
+  /**
+   * Prompt-ready excerpt of the chunks most relevant to `query`, for injecting
+   * real platform rules into a generation prompt.
+   *
+   * Retrieval is an enhancement, not a hard dependency: returns '' when there
+   * is nothing to retrieve, or when the vector store is unavailable.
+   */
+  async buildPromptContext(
+    query: string,
+    options?: { platform?: string; topK?: number },
+  ): Promise<string> {
+    if (!query.trim()) return ''
+
+    try {
+      const results = await this.searchKnowledge(query, {
+        platform: options?.platform,
+        topK: options?.topK ?? DEFAULT_CONTEXT_CHUNKS,
+      })
+      if (results.length === 0) return ''
+
+      return results
+        .map((r) => {
+          const { title, platform } = r.chunk.metadata
+          const source = platform ? `${title} [${platform}]` : title
+          return `### ${source}\n${r.chunk.content}`
+        })
+        .join('\n\n')
+    } catch (err) {
+      console.error('[Knowledge] Retrieval failed, generating without context:', err)
+      return ''
+    }
   }
 
   // ── Compliance ────────────────────────────────────────────────────
