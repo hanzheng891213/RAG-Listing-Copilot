@@ -525,9 +525,13 @@ app.post('/api/knowledge/seed', async (c) => {
   }
 
   try {
-    const { seedKnowledgeBase } = await import('./services/knowledge/seed.js')
-    const count = await seedKnowledgeBase(initKnowledgeService(c))
-    return c.json({ success: true, count })
+    const { seedKnowledgeBase, DEFAULT_SEED_BATCH } = await import('./services/knowledge/seed.js')
+    // Batched: one request can't ingest the whole backlog without exhausting
+    // the subrequest budget. Repeat with ?limit= while `remaining` is non-zero.
+    const requested = parseInt(c.req.query('limit') ?? '', 10)
+    const limit = Number.isFinite(requested) && requested > 0 ? requested : DEFAULT_SEED_BATCH
+    const result = await seedKnowledgeBase(initKnowledgeService(c), { limit })
+    return c.json({ success: true, ...result })
   } catch (error) {
     console.error('Knowledge seed error:', error)
     return c.json({ error: 'Seed failed', code: 'ERR_KNOWLEDGE_SEED' }, 500)

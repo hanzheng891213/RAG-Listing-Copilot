@@ -97,11 +97,12 @@ app.listen(PORT, async () => {
   console.log(`Allowed origins: ${ALLOWED_ORIGINS.join(', ') || '(none configured)'}`)
   console.log(`Health check: http://localhost:${PORT}/health`)
 
-  // Seed knowledge base from local markdown files
+  // Seed knowledge base from the bundled documents (no subrequest cap locally,
+  // so no batching needed here).
   try {
-    const count = await seedKnowledgeBase()
-    if (count > 0) {
-      console.log(`[Server] Knowledge base seeded with ${count} documents.`)
+    const { ingested } = await seedKnowledgeBase()
+    if (ingested > 0) {
+      console.log(`[Server] Knowledge base seeded with ${ingested} documents.`)
     }
   } catch (err) {
     console.warn('[Server] Knowledge base seeding failed (non-fatal):', err)
