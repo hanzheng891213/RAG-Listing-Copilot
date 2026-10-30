@@ -246,14 +246,14 @@ export class ProductService {
     const now = new Date().toISOString()
 
     if (this.ephemeral) {
-      accepted.forEach((item, index) => {
+      accepted.forEach((item) => {
         const existing = this.memory.get(item.id)
         this.memory.set(item.id, {
           id: item.id,
           ownerId: existing?.ownerId || actor.userId,
           ownerName: actor.userName,
           fields: item.fields,
-          sortOrder: index,
+          sortOrder: existing?.sortOrder ?? 0,
           createdAt: existing?.createdAt || now,
           updatedAt: now,
         })
@@ -290,7 +290,10 @@ export class ProductService {
             actor.userId,
             actor.userName,
             JSON.stringify(item.fields),
-            index,
+            // Never derive order from the batch position: saving one edited row
+            // would send index 0 and silently move it to the top of the list.
+            // Ordering is created_at ASC, which is stable across saves.
+            0,
             now,
             now,
           ),

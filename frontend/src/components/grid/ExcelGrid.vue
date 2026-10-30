@@ -282,6 +282,13 @@ function isSelected(rowId: string, field: string): boolean {
 }
 
 function onCellPointerDown(rowId: string, field: string, event: MouseEvent): void {
+  // mousedown is prevented on cells, so focus never leaves the editor and blur
+  // never fires — the open editor has to be committed explicitly when the
+  // pointer moves to a different cell.
+  const current = editing.value
+  if (current && (current.rowId !== rowId || current.field !== field)) {
+    commitEditing()
+  }
   emit('select', { rowId, field, extend: event.shiftKey })
 }
 
@@ -408,6 +415,10 @@ watch(
   () => props.height,
   () => nextTick(measure),
 )
+
+// Column widths change scrollWidth; without this the scrollbar thumb keeps a
+// stale size after the layout panel hides or reorders a column.
+watch(totalWidth, () => nextTick(measure))
 
 onBeforeUnmount(() => {
   resizeObserver?.disconnect()
@@ -606,6 +617,20 @@ onBeforeUnmount(() => {
   padding: 0;
   color: var(--el-text-color-secondary);
   font-variant-numeric: tabular-nums;
+}
+
+/* The row-number column is the first frozen slot. Without sticky here it
+   scrolls away and the frozen data columns keep a 56px gap in front of them. */
+.xhead--rownum {
+  position: sticky;
+  left: 0;
+  z-index: 6;
+}
+
+.xcell--rownum {
+  position: sticky;
+  left: 0;
+  z-index: 2;
 }
 
 /* Both axes on one element: vertical for the header, horizontal for freeze. */

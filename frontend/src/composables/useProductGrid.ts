@@ -140,6 +140,8 @@ export function useProductGrid(options: UseProductGridOptions) {
     }
     cellErrors.value = {}
     refreshSummary()
+    // A page of real rows must still end with one editable blank row.
+    ensureDraftRows()
   }
 
   async function loadPage(targetPage: number, opts: { silent?: boolean } = {}): Promise<void> {
@@ -248,7 +250,9 @@ export function useProductGrid(options: UseProductGridOptions) {
   }
 
   function ensureDraftRows(): void {
-    if (saving.value || initializing.value) return
+    // `initializing` must NOT block this: the draft row has to be there while
+    // the first page is still loading, otherwise the table looks read-only.
+    if (saving.value) return
     const start = trailingDraftStart(rows.value, fields.value)
     if (rows.value.length - start < 1) {
       const owner = currentOwner()
@@ -650,7 +654,6 @@ export function useProductGrid(options: UseProductGridOptions) {
         notify({ message: '该行保存失败', type: 'error' })
         return false
       }
-      refreshSummary()
       notify({ message: '已保存', type: 'success' })
       return true
     } catch (err) {
@@ -660,6 +663,10 @@ export function useProductGrid(options: UseProductGridOptions) {
     } finally {
       savingIds.value = savingIds.value.filter((id) => id !== rowId)
       saving.value = false
+      // Must run after the lock is released: refreshSummary() returns early
+      // while `saving` is true, which would leave dirty stuck on after a
+      // successful single-row save.
+      refreshSummary()
     }
   }
 
