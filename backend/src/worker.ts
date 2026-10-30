@@ -9,6 +9,7 @@ import { deepseekService } from './services/deepseek/deepseekService.js'
 import { ragService } from './services/rag/ragService.js'
 import { modelService, initModelService } from './services/model/modelService.js'
 import { getKnowledgeService, resetKnowledgeService } from './services/knowledge/knowledgeService.js'
+import { getProductService } from './services/products/productService.js'
 import { extractListingFields, normalizeListingFields, parseFinalJson, streamDemoSse } from './utils/listingStream.js'
 
 type Bindings = {
@@ -123,6 +124,27 @@ function isAdminRequest(c: any): boolean {
     return payload.role === 'admin'
   } catch {
     return false
+  }
+}
+
+/**
+ * Full identity for a request, or null when unauthenticated. Row-level write
+ * permissions need the user id, not just "is this an admin".
+ */
+function readActor(c: any): { userId: string; userName: string; isAdmin: boolean } | null {
+  const authHeader = c.req.header('Authorization')
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+  if (!token) return null
+  try {
+    const payload = jwtSign.verify(token, JWT_SECRET) as JwtPayload
+    const user = userStore.get(payload.userId)
+    return {
+      userId: payload.userId,
+      userName: user?.username ?? payload.username,
+      isAdmin: payload.role === 'admin',
+    }
+  } catch {
+    return null
   }
 }
 
@@ -566,6 +588,59 @@ app.post('/api/knowledge/seed', async (c) => {
   } catch (error) {
     console.error('Knowledge seed error:', error)
     return c.json({ error: 'Seed failed', code: 'ERR_KNOWLEDGE_SEED' }, 500)
+  }
+})
+
+// ════════════════════════════════════════════════════════════════════
+// Product grid routes (Excel-like editor)
+// ════════════════════════════════════════════════════════════════════
+
+// GET /api/products - paged list for the grid. Public read, like the knowledge
+// base: the grid is a browsing surface; writes are what needs auth.
+app.get('/api/products', async (c) => {
+  try {
+    const page = Math.max(parseInt(c.req.query('page') || '1', 10) || 1, 1)
+    const requested = parseInt(c.req.query('pageSize') || '100', 10) || 100
+    const pageSize = Math.min(Math.max(requested, 1), 500)
+    const query = c.req.query('q') || ''
+
+    const svc = getProductService(c.env?.KNOWLEDGE_DB)
+    const result = await svc.list({ page, pageSize, query })
+    return c.json(result)
+  } catch (error) {
+    console.error('Product list error:', error)
+    return c.json({ error: 'Failed to load products', code: 'ERR_PRODUCT_LIST' }, 500)
+  }
+})
+
+// POST /api/products/batch - upsert + idempotent delete, one request per save.
+// Anything that is not a whole valid row is rejected rather than partially
+// written, so the client's baseline can never drift from the server.
+app.post('/api/products/batch', async (c) => {
+  const actor = readActor(c)
+  if (!actor) {
+    return c.json({ error: 'Authentication required', code: 'ERR_AUTH_REQUIRED' }, 401)
+  }
+
+  try {
+    const body = await c.req.json().catch(() => ({}))
+    const items = Array.isArray(body?.items) ? body.items : []
+    const deletedIds = Array.isArray(body?.deletedIds)
+      ? body.deletedIds.filter((id: unknown): id is string => typeof id === 'string')
+      : []
+
+    if (items.length === 0 && deletedIds.length === 0) {
+      return c.json({ error: 'Nothing to save', code: 'ERR_EMPTY_BATCH' }, 400)
+    }
+
+    const svc = getProductService(c.env?.KNOWLEDGE_DB)
+    const result = await svc.saveBatch({ actor, items, deletedIds })
+    return c.json(result)
+  } catch (error) {
+    console.error('Product batch error:', error)
+    const message = error instanceof Error ? error.message : 'Batch save failed'
+    const status = /too many|invalid|must be/i.test(message) ? 400 : 500
+    return c.json({ error: message, code: 'ERR_PRODUCT_BATCH' }, status)
   }
 })
 

@@ -16,6 +16,7 @@ const BASE_NAV_ITEMS = [
   { path: '/', labelKey: 'nav.home', icon: 'HomeFilled' },
   { path: '/supplier-upload', labelKey: 'nav.supplierUpload', icon: 'Upload' },
   { path: '/listing-generator', labelKey: 'nav.listingGenerator', icon: 'MagicStick' },
+  { path: '/product-grid', labelKey: 'nav.productGrid', icon: 'Grid' },
   { path: '/knowledge-base', labelKey: 'nav.knowledgeBase', icon: 'Collection' },
   { path: '/model-manager', labelKey: 'nav.modelManager', icon: 'Cpu', requiresAdmin: true },
 ]

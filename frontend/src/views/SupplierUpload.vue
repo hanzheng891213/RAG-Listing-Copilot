@@ -14,6 +14,15 @@ import type { SupplierProduct } from '@/types/supplier'
 
 const { t } = useI18n()
 const router = useRouter()
+
+/**
+ * Hands the parsed rows to the product grid. The rows stay in the supplier
+ * store; the grid picks them up once on mount and clears the flag, so a reload
+ * does not re-import the same file.
+ */
+function openInGrid() {
+  router.push({ path: '/product-grid', query: { import: '1' } })
+}
 const store = useSupplierStore()
 const {
   isDragging,
@@ -162,6 +171,10 @@ function handleManualSubmit() {
         <el-button @click="showManualForm = !showManualForm">
           <el-icon><Edit /></el-icon>
           {{ showManualForm ? t('common.cancel') : t('supplier.manualInput') }}
+        </el-button>
+        <el-button v-if="store.hasProducts" @click="openInGrid">
+          <el-icon><Grid /></el-icon>
+          {{ t('supplier.openInGrid') }}
         </el-button>
         <el-button type="primary" :disabled="store.selectedIds.size === 0" @click="$router.push('/listing-generator')">
           <el-icon><MagicStick /></el-icon>
