@@ -21,6 +21,12 @@ const routes: RouteRecordRaw[] = [
     meta: { titleKey: 'nav.listingGenerator', icon: 'MagicStick', requiresAuth: true },
   },
   {
+    path: '/product-grid',
+    name: 'ProductGrid',
+    component: () => import('@/views/ProductGrid.vue'),
+    meta: { titleKey: 'nav.productGrid', icon: 'Grid', requiresAuth: true },
+  },
+  {
     path: '/knowledge-base',
     name: 'KnowledgeBase',
     component: () => import('@/views/KnowledgeBase.vue'),

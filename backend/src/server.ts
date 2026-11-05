@@ -4,6 +4,7 @@ import apiController, { reportClientError } from './controllers/apiController.js
 import authController from './controllers/authController.js'
 import modelController from './controllers/modelController.js'
 import knowledgeController from './controllers/knowledgeController.js'
+import productController from './controllers/productController.js'
 import { requireAuth, requireAdmin, checkApiUsage } from './middleware/authMiddleware.js'
 import { rateLimiter } from './middleware/rateLimiter.js'
 import { seedKnowledgeBase } from './services/knowledge/seed.js'
@@ -65,6 +66,10 @@ app.use('/api/models', requireAuth, requireAdmin, modelController)
 
 // Knowledge base routes — public access (no auth required)
 app.use('/api/knowledge', knowledgeController)
+
+// Product grid routes — read is public, writes are authenticated per-route.
+// Mounted before the blanket /api guard so the grid can list without a token.
+app.use('/api', productController)
 
 // Client error ingestion — public (errors can happen before login), lightly rate-limited
 app.post('/api/client-error', rateLimiter({ windowMs: 60_000, max: 60 }), reportClientError)
