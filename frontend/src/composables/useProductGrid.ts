@@ -14,12 +14,15 @@ import {
   createBlankRow,
   defaultLayout,
   isBlankRow,
+  normaliseImportRecord,
   normaliseLayout,
   rowSignature,
   trailingDraftStart,
 } from '@/utils/gridFields'
 import { normaliseCell } from '@/utils/tsv'
 import { loadLayout, saveLayout, type LayoutKind } from '@/utils/layoutStorage'
+import { GRID_DEFAULT_PAGE_SIZE } from '@/utils/constants'
+import i18n from '@/locales'
 import { useGridQuery } from './useGridQuery'
 
 /**
@@ -67,9 +70,14 @@ const PULSE_MS = 6_000
 const DELETE_RETRY_LIMIT = 3
 const MAX_FIELD_LENGTH = 4_000
 
+/** Composable-level translations: notices are emitted from here, not a view. */
+function t(key: string, params?: Record<string, unknown>): string {
+  return i18n.global.t(key, params ?? {})
+}
+
 export function useProductGrid(options: UseProductGridOptions) {
   const gridName = options.gridName
-  const pageSize = options.pageSize ?? 100
+  const pageSize = ref(options.pageSize ?? GRID_DEFAULT_PAGE_SIZE)
 
   // ── State ─────────────────────────────────────────────────────────
   const rows = ref<GridRow[]>([])
@@ -136,7 +144,7 @@ export function useProductGrid(options: UseProductGridOptions) {
     adoptLayout()
     baseline.clear()
     for (const row of rows.value) {
-      baseline.set(row.id, { signature: rowSignature(row, fields.value), row: cloneRow(row) })
+      baseline.set(row.id, { signature: rowSignature(row), row: cloneRow(row) })
     }
     cellErrors.value = {}
     refreshSummary()
@@ -147,12 +155,13 @@ export function useProductGrid(options: UseProductGridOptions) {
   async function loadPage(targetPage: number, opts: { silent?: boolean } = {}): Promise<void> {
     const stamp = identity()
     const nextPage = Math.max(1, targetPage)
+    const requestedSize = pageSize.value
     if (!opts.silent) loading.value = true
 
     try {
       const result = await query.fetchPage({
         page: nextPage,
-        pageSize,
+        pageSize: requestedSize,
         q: search.value.trim() || undefined,
       })
       // Superseded by a newer request: drop it rather than flicker the grid.
@@ -161,6 +170,8 @@ export function useProductGrid(options: UseProductGridOptions) {
       if (identity() !== stamp) return
 
       page.value = result.currentPage
+      // Reflect the size the server actually used (it clamps to 1..500).
+      pageSize.value = result.itemsPerPage || requestedSize
       totalItems.value = result.totalItems
       totalPages.value = result.totalPages
       tableMissing.value = Boolean(result.tableMissing)
@@ -169,6 +180,16 @@ export function useProductGrid(options: UseProductGridOptions) {
     } finally {
       if (!opts.silent) loading.value = false
     }
+  }
+
+  /**
+   * Changes the page size without touching the data. The caller decides when to
+   * reload (and with which page) because a dirty page needs a save/discard
+   * confirmation first.
+   */
+  function setPageSize(next: number): void {
+    const size = Number.isFinite(next) ? Math.trunc(next) : GRID_DEFAULT_PAGE_SIZE
+    pageSize.value = Math.min(Math.max(size || GRID_DEFAULT_PAGE_SIZE, 1), 500)
   }
 
   async function reload(): Promise<void> {
@@ -210,7 +231,7 @@ export function useProductGrid(options: UseProductGridOptions) {
         added += 1
         continue
       }
-      if (rowSignature(row, fields.value) !== entry.signature) {
+      if (rowSignature(row) !== entry.signature) {
         items.push({ id: row.id, fields: { ...row.fields } })
         modified += 1
       }
@@ -340,19 +361,32 @@ export function useProductGrid(options: UseProductGridOptions) {
 
   function validateRow(row: GridRow): GridImportIssue[] {
     const issues: GridImportIssue[] = []
-    const title = (row.fields.title ?? '').trim()
-    if (!title) {
-      issues.push({ row: 0, field: 'title', message: '标题不能为空' })
+
+    // Import/edit only requires an identity for the row: the supplier name and
+    // its SKU. Everything else (title, category, price, specs) is either
+    // optional for the generator or filled in later by it.
+    const sku = (row.fields.sku ?? '').trim()
+    if (!sku) {
+      issues.push({ row: 0, field: 'sku', message: t('grid.skuRequired') })
     }
+    const productName = (row.fields.productName ?? '').trim()
+    if (!productName) {
+      issues.push({ row: 0, field: 'productName', message: t('grid.productNameRequired') })
+    }
+
     for (const meta of fields.value) {
       const value = row.fields[meta.key] ?? ''
       if (value.length > MAX_FIELD_LENGTH) {
-        issues.push({ row: 0, field: meta.key, message: `超过 ${MAX_FIELD_LENGTH} 字符` })
+        issues.push({
+          row: 0,
+          field: meta.key,
+          message: t('grid.valueTooLong', { max: MAX_FIELD_LENGTH }),
+        })
         continue
       }
       if (meta.type === 'number' && value.trim() !== '') {
         if (normaliseCell(value, 'number') === null) {
-          issues.push({ row: 0, field: meta.key, message: '必须是数字' })
+          issues.push({ row: 0, field: meta.key, message: t('grid.mustBeNumber') })
         }
       }
     }
@@ -387,7 +421,11 @@ export function useProductGrid(options: UseProductGridOptions) {
 
     if (matrix.length === 0) return { written: 0, skipped: 0, issues }
     if (cols.length === 0) {
-      return { written: 0, skipped: 0, issues: [{ row: 0, field: '', message: '没有可写入的列' }] }
+      return {
+        written: 0,
+        skipped: 0,
+        issues: [{ row: 0, field: '', message: t('grid.noColumns') }],
+      }
     }
 
     // Resolve the anchor to an index pair; no selection means "from the top".
@@ -428,7 +466,7 @@ export function useProductGrid(options: UseProductGridOptions) {
       return {
         written: 0,
         skipped: 0,
-        issues: [{ row: 0, field: '', message: '粘贴内容超出最右侧列' }],
+        issues: [{ row: 0, field: '', message: t('grid.pasteOutOfRange') }],
       }
     }
 
@@ -461,7 +499,10 @@ export function useProductGrid(options: UseProductGridOptions) {
             // should point at the clipboard line the user can fix.
             row: r + 1,
             field: field.key,
-            message: `"${matrix[r][c]}" 不是合法的${field.type === 'number' ? '数字' : '文本'}`,
+            message: t(
+              field.type === 'number' ? 'grid.invalidPastedNumber' : 'grid.invalidPastedText',
+              { value: matrix[r][c] ?? '' },
+            ),
           })
           continue
         }
@@ -509,7 +550,10 @@ export function useProductGrid(options: UseProductGridOptions) {
   /**
    * Appends parsed rows (from an .xlsx/.csv upload) before the draft block, so
    * imported data never lands underneath the empty rows at the bottom.
-   * Bad rows are skipped individually and reported per row, unlike paste.
+   *
+   * Supplier headers are mapped onto the canonical columns first (商品名称/SKU/
+   * 详情描述/五点描述 …); unmapped headers survive as their own columns. A row
+   * is skipped only when its mapped name or SKU is missing.
    */
   function importRecords(
     records: Array<Record<string, string>>,
@@ -523,7 +567,8 @@ export function useProductGrid(options: UseProductGridOptions) {
     records.forEach((record, index) => {
       const line = firstLine + index
       const row = createBlankRow(owner.id, owner.name)
-      row.fields = { ...record }
+      row.fields = normaliseImportRecord(record)
+      if (isBlankRow(row, fields.value) && Object.keys(row.fields).length === 0) return
       const rowIssues = validateRow(row)
       if (rowIssues.length > 0) {
         for (const issue of rowIssues) issues.push({ ...issue, row: line })
@@ -580,7 +625,7 @@ export function useProductGrid(options: UseProductGridOptions) {
       row.createdAt = persisted.createdAt || row.createdAt
       row.updatedAt = persisted.updatedAt
       baseline.set(persisted.id, {
-        signature: rowSignature(row, fields.value),
+        signature: rowSignature(row),
         row: cloneRow(row),
       })
     }
@@ -626,7 +671,7 @@ export function useProductGrid(options: UseProductGridOptions) {
     const rejected = Array.isArray(response.rejected) ? response.rejected : []
     for (const item of rejected) {
       applyRowErrors(item.id, [
-        { row: 0, field: '*', message: item.reason || '服务端拒绝写入' },
+        { row: 0, field: '*', message: item.reason || t('grid.serverRejected') },
       ])
     }
 
@@ -634,19 +679,19 @@ export function useProductGrid(options: UseProductGridOptions) {
   }
 
   /** Silent single-row save: no page mask, row-level spinner, no reload. */
-  async function saveOne(rowId: string): Promise<boolean> {
+  async function saveOne(rowId: string, opts: { silent?: boolean } = {}): Promise<boolean> {
     if (saving.value || mutating.value) return false
     const row = findRow(rowId)
     if (!row) return false
     if (!options.canEdit(row)) {
-      notify({ message: '没有权限修改该行', type: 'warning' })
+      if (!opts.silent) notify({ message: t('grid.rowNoPermission'), type: 'warning' })
       return false
     }
 
     const issues = validateRow(row)
     if (issues.length > 0) {
       applyRowErrors(rowId, issues)
-      notify({ message: issues[0].message, type: 'error' })
+      if (!opts.silent) notify({ message: issues[0].message, type: 'error' })
       return false
     }
 
@@ -658,14 +703,14 @@ export function useProductGrid(options: UseProductGridOptions) {
       const outcome = await writeBatch([{ id: row.id, fields: { ...row.fields } }], [])
       if (identity() !== stamp) return false
       if (!outcome.ok) {
-        notify({ message: '该行保存失败', type: 'error' })
+        if (!opts.silent) notify({ message: t('grid.rowSaveFailed'), type: 'error' })
         return false
       }
-      notify({ message: '已保存', type: 'success' })
+      if (!opts.silent) notify({ message: t('grid.rowSaved'), type: 'success' })
       return true
     } catch (err) {
       console.error('[Grid] row save failed:', err)
-      notify({ message: '保存失败，请重试', type: 'error' })
+      if (!opts.silent) notify({ message: t('grid.saveFailed'), type: 'error' })
       return false
     } finally {
       savingIds.value = savingIds.value.filter((id) => id !== rowId)
@@ -681,7 +726,7 @@ export function useProductGrid(options: UseProductGridOptions) {
   async function savePage(): Promise<boolean> {
     if (saving.value || mutating.value) return false
     if (!dirty.value) {
-      notify({ message: '没有需要保存的修改', type: 'info' })
+      notify({ message: t('grid.nothingToSave'), type: 'info' })
       return false
     }
 
@@ -689,7 +734,7 @@ export function useProductGrid(options: UseProductGridOptions) {
     const items = writableRows(changes.items)
 
     if (items.length !== changes.items.length) {
-      notify({ message: '部分行没有权限，已跳过', type: 'warning' })
+      notify({ message: t('grid.someRowsSkipped'), type: 'warning' })
     }
 
     // Validate before the request: one round trip, no partial writes.
@@ -699,7 +744,12 @@ export function useProductGrid(options: UseProductGridOptions) {
       const issues = validateRow(row)
       if (issues.length > 0) {
         applyRowErrors(item.id, issues)
-        notify({ message: `「${row.fields.title || row.id}」校验未通过`, type: 'error' })
+        notify({
+          message: t('grid.rowValidationFailed', {
+            name: row.fields.productName || row.fields.sku || row.id,
+          }),
+          type: 'error',
+        })
         return false
       }
     }
@@ -713,7 +763,7 @@ export function useProductGrid(options: UseProductGridOptions) {
       if (identity() !== stamp) return false
 
       if (!outcome.ok) {
-        notify({ message: '部分数据保存失败，请检查红色单元格', type: 'error' })
+        notify({ message: t('grid.partialSaveFailed'), type: 'error' })
       }
 
       // Compensation only matters when rows were deleted.
@@ -721,7 +771,7 @@ export function useProductGrid(options: UseProductGridOptions) {
       if (changes.deletedIds.length > 0 && outcome.ok) {
         stranded = await compensateDeletions(changes.deletedIds)
         if (stranded.length > 0) {
-          notify({ message: `有 ${stranded.length} 行未能删除`, type: 'warning' })
+          notify({ message: t('grid.rowsNotDeleted', { count: stranded.length }), type: 'warning' })
         }
       }
 
@@ -739,18 +789,63 @@ export function useProductGrid(options: UseProductGridOptions) {
       }
 
       if (outcome.ok) {
-        notify({ message: '保存成功', type: 'success' })
+        notify({ message: t('grid.saved'), type: 'success' })
       }
       return outcome.ok
     } catch (err) {
       console.error('[Grid] page save failed:', err)
-      notify({ message: '保存失败，请重试', type: 'error' })
+      notify({ message: t('grid.saveFailed'), type: 'error' })
       return false
     } finally {
       mutating.value = false
       saving.value = false
       refreshSummary()
     }
+  }
+
+  // ── Generated / imported writes ───────────────────────────────────
+
+  /**
+   * Writes values into one row without going through the cell editor: the
+   * generator, the importer and the listing page all hand back whole field sets.
+   * Permission is re-checked exactly like `setCell`.
+   */
+  function applyFields(rowId: string, patch: Record<string, string>): boolean {
+    if (saving.value || mutating.value) return false
+    const row = findRow(rowId)
+    if (!row || !options.canEdit(row)) return false
+
+    let changed = false
+    for (const [key, value] of Object.entries(patch)) {
+      if ((row.fields[key] ?? '') === value) continue
+      row.fields[key] = value
+      changed = true
+    }
+    if (changed) scheduleSummary()
+    return changed
+  }
+
+  /**
+   * Saves until the grid is clean. Import and generation write whole blocks of
+   * rows, and "the user must press 保存 afterwards" is the wrong contract for
+   * those paths — the visible table is the product of the listing, so it is
+   * persisted in one go (one batch per current page).
+   */
+  async function saveAll(maxRounds = 20): Promise<boolean> {
+    // The summary is debounced (120ms), so an import that just landed would
+    // otherwise look clean and never reach the server.
+    refreshSummary()
+
+    let ok = true
+    for (let round = 0; round < maxRounds && dirty.value; round++) {
+      const saved = await savePage()
+      if (!saved) {
+        ok = false
+        break
+      }
+    }
+    refreshSummary()
+    return ok && !dirty.value
   }
 
   // ── Layout ────────────────────────────────────────────────────────
@@ -822,6 +917,7 @@ export function useProductGrid(options: UseProductGridOptions) {
     hasDraftRows,
     // lifecycle
     loadPage,
+    setPageSize,
     reload,
     initEmpty,
     refreshSummary,
@@ -840,6 +936,8 @@ export function useProductGrid(options: UseProductGridOptions) {
     // writes
     saveOne,
     savePage,
+    saveAll,
+    applyFields,
     // layout
     applyLayout,
     resetLayout,

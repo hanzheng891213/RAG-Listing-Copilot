@@ -1,6 +1,7 @@
 import type { ComputedRef, Ref } from 'vue'
 import type { GridField, GridImportIssue, GridRow, GridSelection } from '@/types/grid'
 import { parseTsv, toTsv, TsvError } from '@/utils/tsv'
+import i18n from '@/locales'
 
 /**
  * Excel clipboard semantics for the grid.
@@ -35,6 +36,14 @@ export interface GridClipboardOptions {
 }
 
 export function useGridClipboard(options: GridClipboardOptions) {
+  const t = (key: string, params?: Record<string, unknown>): string =>
+    i18n.global.t(key, params ?? {})
+
+  function fieldLabel(field: GridField | undefined, fallback: string): string {
+    if (!field) return fallback
+    return field.labelKey ? t(field.labelKey) : field.label
+  }
+
   function isEditableTarget(target: EventTarget | null): boolean {
     if (!(target instanceof HTMLElement)) return false
     return Boolean(target.closest('input, textarea, [contenteditable="true"]'))
@@ -154,7 +163,7 @@ export function useGridClipboard(options: GridClipboardOptions) {
       }
     }
     if (cleared > 0) {
-      options.notify({ message: `已剪切 ${cleared} 个单元格`, type: 'success' })
+      options.notify({ message: t('grid.cutCells', { count: cleared }), type: 'success' })
     }
   }
 
@@ -174,7 +183,7 @@ export function useGridClipboard(options: GridClipboardOptions) {
     try {
       matrix = parseTsv(text)
     } catch (err) {
-      const message = err instanceof TsvError ? err.message : '粘贴内容无法解析'
+      const message = err instanceof TsvError ? err.message : t('grid.pasteParseFailed')
       options.notify({ message, type: 'error' })
       return
     }
@@ -185,10 +194,14 @@ export function useGridClipboard(options: GridClipboardOptions) {
 
     if (result.issues.length > 0) {
       const first = result.issues[0]
-      const label =
-        options.fields.value.find((field) => field.key === first.field)?.label ?? first.field
+      const field = options.fields.value.find((candidate) => candidate.key === first.field)
       options.notify({
-        message: `未写入：第 ${first.row} 行「${label}」${first.message}（共 ${result.issues.length} 处问题）`,
+        message: t('grid.pasteNotWritten', {
+          row: first.row,
+          field: fieldLabel(field, first.field),
+          message: first.message,
+          count: result.issues.length,
+        }),
         type: 'error',
       })
       return
@@ -196,10 +209,10 @@ export function useGridClipboard(options: GridClipboardOptions) {
 
     selectPastedBlock(selection, matrix)
 
-    const parts = [`已粘贴 ${result.written} 个单元格`]
-    if (result.skipped > 0) parts.push(`跳过 ${result.skipped} 个只读行`)
+    const parts = [t('grid.pasteWritten', { count: result.written })]
+    if (result.skipped > 0) parts.push(t('grid.pasteSkipped', { count: result.skipped }))
     options.notify({
-      message: parts.join('，'),
+      message: parts.join(' · '),
       type: result.written > 0 ? 'success' : 'warning',
     })
   }
@@ -235,7 +248,7 @@ export function useGridClipboard(options: GridClipboardOptions) {
         }
       }
       if (cleared > 0) {
-        options.notify({ message: `已清空 ${cleared} 个单元格`, type: 'info' })
+        options.notify({ message: t('grid.clearedCells', { count: cleared }), type: 'info' })
       }
       return
     }

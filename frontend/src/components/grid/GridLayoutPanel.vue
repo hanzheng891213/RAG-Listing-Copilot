@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import type { GridField, GridLayout } from '@/types/grid'
 import { normaliseLayout, defaultLayout } from '@/utils/gridFields'
 
@@ -21,6 +22,13 @@ const emit = defineEmits<{
   (e: 'reset'): void
   (e: 'save-default', layout: GridLayout): void
 }>()
+
+const { t } = useI18n()
+
+/** Core columns are translated; uploaded columns keep their raw header. */
+function fieldLabel(field: GridField): string {
+  return field.labelKey ? t(field.labelKey) : field.label
+}
 
 const draft = ref<GridLayout>(defaultLayout(props.fields))
 
@@ -78,7 +86,7 @@ function reset(): void {
 <template>
   <el-dialog
     :model-value="open"
-    title="列设置"
+    :title="t('grid.layoutTitle')"
     width="560px"
     @update:model-value="(value: boolean) => emit('update:open', value)"
   >
@@ -86,14 +94,16 @@ function reset(): void {
       type="info"
       :closable="false"
       show-icon
-      title="布局只影响显示：隐藏的列仍会保存，复制粘贴仍按列的原始顺序映射。"
+      :title="t('grid.layoutHint')"
       class="layout-hint"
     />
 
     <div class="layout-section">
       <div class="layout-section__title">
-        列顺序与显示
-        <span class="layout-section__meta">当前显示 {{ visibleCount }} / {{ fields.length }} 列</span>
+        {{ t('grid.layoutOrder') }}
+        <span class="layout-section__meta">
+          {{ t('grid.layoutVisibleCount', { visible: visibleCount, total: fields.length }) }}
+        </span>
       </div>
       <div class="layout-list">
         <div v-for="field in orderedFields" :key="field.key" class="layout-row">
@@ -102,16 +112,23 @@ function reset(): void {
             @update:model-value="toggleHidden(field.key)"
           />
           <span class="layout-row__label" :class="{ 'is-hidden': draft.hidden.includes(field.key) }">
-            {{ field.label }}
-            <el-tag v-if="!field.core" size="small" type="info">上传列</el-tag>
+            {{ fieldLabel(field) }}
+            <el-tag v-if="!field.core" size="small" type="info">{{ t('grid.uploadColumn') }}</el-tag>
           </span>
           <el-button-group>
-            <el-button size="small" text :disabled="draft.order[0] === field.key" @click="move(field.key, -1)">
+            <el-button
+              size="small"
+              text
+              v-tooltip="t('grid.moveUp')"
+              :disabled="draft.order[0] === field.key"
+              @click="move(field.key, -1)"
+            >
               ↑
             </el-button>
             <el-button
               size="small"
               text
+              v-tooltip="t('grid.moveDown')"
               :disabled="draft.order[draft.order.length - 1] === field.key"
               @click="move(field.key, 1)"
             >
@@ -123,9 +140,9 @@ function reset(): void {
     </div>
 
     <div class="layout-section">
-      <div class="layout-section__title">冻结与序号</div>
+      <div class="layout-section__title">{{ t('grid.layoutFreeze') }}</div>
       <div class="layout-inline">
-        <label>左侧冻结列数</label>
+        <label>{{ t('grid.fixedLeft') }}</label>
         <el-input-number
           :model-value="draft.fixedLeft"
           size="small"
@@ -133,7 +150,7 @@ function reset(): void {
           :max="Math.max(0, visibleCount - 1)"
           @update:model-value="(value: number | undefined) => setFreeze('fixedLeft', value ?? 0)"
         />
-        <label>右侧冻结列数</label>
+        <label>{{ t('grid.fixedRight') }}</label>
         <el-input-number
           :model-value="draft.fixedRight"
           size="small"
@@ -141,106 +158,36 @@ function reset(): void {
           :max="Math.max(0, visibleCount - 1)"
           @update:model-value="(value: number | undefined) => setFreeze('fixedRight', value ?? 0)"
         />
-        <label>显示行号</label>
+        <label>{{ t('grid.showRowNumber') }}</label>
         <el-switch
           :model-value="draft.showRowNumber"
           @update:model-value="(value: boolean) => (draft = { ...draft, showRowNumber: value })"
         />
       </div>
-      <p class="layout-note">左冻结优先；两侧合计不会超过可见列数，避免同一列被钉两次。</p>
+      <p class="layout-note">{{ t('grid.layoutNote') }}</p>
     </div>
 
     <template #footer>
       <div class="layout-footer">
         <div>
-          <el-button size="small" @click="reset">恢复默认</el-button>
+          <el-button size="small" @click="reset">{{ t('grid.restoreDefault') }}</el-button>
           <el-button size="small" @click="emit('save-default', normaliseLayout(draft, fields))">
-            存为我的默认
+            {{ t('grid.saveAsDefault') }}
           </el-button>
         </div>
         <div>
-          <el-button size="small" @click="emit('update:open', false)">取消</el-button>
-          <el-button size="small" type="primary" @click="apply">应用</el-button>
+          <el-button size="small" @click="emit('update:open', false)">
+            {{ t('grid.cancel') }}
+          </el-button>
+          <el-button size="small" type="primary" @click="apply">
+            {{ t('grid.apply') }}
+          </el-button>
         </div>
       </div>
     </template>
   </el-dialog>
 </template>
 
-<style scoped>
-.layout-hint {
-  margin-bottom: 12px;
-}
-
-.layout-section {
-  margin-bottom: 16px;
-}
-
-.layout-section__title {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  font-size: 13px;
-  font-weight: 600;
-  margin-bottom: 8px;
-}
-
-.layout-section__meta {
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--el-text-color-secondary);
-}
-
-.layout-list {
-  max-height: 260px;
-  overflow: auto;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 4px;
-  padding: 4px 8px;
-}
-
-.layout-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 32px;
-  border-bottom: 1px dashed var(--el-border-color-lighter);
-}
-
-.layout-row:last-child {
-  border-bottom: none;
-}
-
-.layout-row__label {
-  flex: 1;
-  font-size: 13px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.layout-row__label.is-hidden {
-  color: var(--el-text-color-disabled);
-  text-decoration: line-through;
-}
-
-.layout-inline {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  font-size: 13px;
-}
-
-.layout-note {
-  margin: 8px 0 0;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-}
-
-.layout-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
+<style scoped lang="scss">
+@use '../../styles/components/grid/grid-layout-panel.scss' as *;
 </style>

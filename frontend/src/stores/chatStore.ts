@@ -28,6 +28,12 @@ export const useChatStore = defineStore('chat', () => {
   const isStreaming = ref(false)
   const error = ref('')
   const customPresets = ref<string[]>(loadPresets())
+  /**
+   * Conversations keyed by listing id. Switching the product tab must not throw
+   * away the thread the user already had for another product.
+   */
+  const threads = ref<Record<string, ChatMessage[]>>({})
+  const activeThreadId = ref('')
   let streamController: AbortController | null = null
 
   function addPreset(text: string) {
@@ -46,6 +52,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function sendMessage(content: string, listingContext?: GeneratedListing) {
+    if (isLoading.value) return
     addUserMessage(content)
     isLoading.value = true
     isStreaming.value = true
@@ -54,6 +61,11 @@ export const useChatStore = defineStore('chat', () => {
     // Placeholder for streaming response
     messages.value.push({ role: 'assistant', content: '' })
     const assistantIdx = messages.value.length - 1
+    // Every callback below is scoped to the thread that asked. A tab switch
+    // stops the stream, but already-queued chunks can still arrive and must not
+    // be appended to the newly selected product's conversation.
+    const threadId = activeThreadId.value
+    const isCurrentThread = () => activeThreadId.value === threadId
 
     try {
       const modelStore = useModelStore()
@@ -71,21 +83,25 @@ export const useChatStore = defineStore('chat', () => {
         },
         // onChunk
         (content: string) => {
-          messages.value[assistantIdx] = {
-            ...messages.value[assistantIdx],
-            content: messages.value[assistantIdx].content + content,
-          }
+          if (!isCurrentThread()) return
+          const target = messages.value[assistantIdx]
+          // The user may have cleared the conversation mid-stream.
+          if (!target) return
+          messages.value[assistantIdx] = { ...target, content: target.content + content }
         },
         // onDone
         () => {
+          if (!isCurrentThread()) return
           isLoading.value = false
           isStreaming.value = false
           streamController = null
         },
         // onError
         (message: string) => {
+          if (!isCurrentThread()) return
           error.value = message
-          if (messages.value[assistantIdx].content === '') {
+          const target = messages.value[assistantIdx]
+          if (target && target.content === '') {
             messages.value[assistantIdx] = {
               role: 'assistant',
               content: i18n.global.t('chat.failed'),
@@ -97,6 +113,7 @@ export const useChatStore = defineStore('chat', () => {
         },
       )
     } catch (err: any) {
+      if (!isCurrentThread()) return
       const msg = err.response?.data?.error || err.message || i18n.global.t('chat.failed')
       error.value = msg
       messages.value.push({
@@ -108,8 +125,35 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  /** Stops the in-flight answer but keeps the partial text that already arrived. */
+  function stopStreaming() {
+    if (!streamController) return
+    streamController.abort()
+    streamController = null
+    isLoading.value = false
+    isStreaming.value = false
+  }
+
   function clearMessages() {
     messages.value = []
+    error.value = ''
+    if (activeThreadId.value) delete threads.value[activeThreadId.value]
+  }
+
+  /**
+   * Points the panel at a listing's thread, saving the one being left first.
+   * Callers stop the stream before switching: an answer belongs to the listing
+   * that asked the question, never to the newly selected one.
+   */
+  function useThread(listingId: string) {
+    if (listingId === activeThreadId.value) return
+    if (activeThreadId.value) {
+      threads.value[activeThreadId.value] = messages.value.map((message) => ({ ...message }))
+    }
+    activeThreadId.value = listingId
+    messages.value = listingId
+      ? (threads.value[listingId] ?? []).map((message) => ({ ...message }))
+      : []
     error.value = ''
   }
 
@@ -119,10 +163,13 @@ export const useChatStore = defineStore('chat', () => {
     isStreaming,
     error,
     customPresets,
+    activeThreadId,
     addPreset,
     removePreset,
     addUserMessage,
     sendMessage,
+    stopStreaming,
     clearMessages,
+    useThread,
   }
 })

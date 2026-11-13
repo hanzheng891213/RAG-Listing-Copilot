@@ -46,11 +46,6 @@ function copyAll() {
   </div>
 </template>
 
-<style scoped>
-.export-bar { display: flex; justify-content: space-between; align-items: center; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border-color); flex-wrap: wrap; gap: 12px; }
-.export-info { display: flex; align-items: center; gap: 10px; }
-.version { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); background: var(--bg-secondary); padding: 2px 8px; border-radius: 4px; }
-.platform-badge { font-size: 12px; color: var(--accent); background: var(--accent-glow); padding: 2px 10px; border-radius: 10px; font-weight: 500; text-transform: capitalize; }
-.template-label { font-size: 12px; color: var(--text-muted); }
-.export-actions { display: flex; gap: 8px; }
+<style scoped lang="scss">
+@use '../../styles/components/listing/export-bar.scss' as *;
 </style>

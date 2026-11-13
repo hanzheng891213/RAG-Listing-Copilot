@@ -10,9 +10,9 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/supplier-upload',
-    name: 'SupplierUpload',
-    component: () => import('@/views/SupplierUpload.vue'),
-    meta: { titleKey: 'nav.supplierUpload', icon: 'Upload', requiresAuth: true },
+    // Uploading is now part of the 上架表: old links land on the table, where
+    // the import button and the drop target live.
+    redirect: '/product-grid',
   },
   {
     path: '/listing-generator',

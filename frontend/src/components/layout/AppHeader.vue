@@ -52,7 +52,7 @@ function goModelManager() {
 
     <div class="header-right">
       <el-dropdown trigger="click" @command="toggleLang">
-        <button class="lang-toggle" :title="LANGUAGES.find(l => l.code === locale)?.label">
+        <button class="lang-toggle" v-tooltip="LANGUAGES.find(l => l.code === locale)?.label">
           {{ LANGUAGES.find(l => l.code === locale)?.native || locale }}
         </button>
         <template #dropdown>
@@ -71,7 +71,7 @@ function goModelManager() {
 
       <button
         class="theme-toggle"
-        :title="ui.isDark ? t('theme.switchLight') : t('theme.switchDark')"
+        v-tooltip="ui.isDark ? t('theme.switchLight') : t('theme.switchDark')"
         @click="ui.isDark = !ui.isDark"
       >
         <el-icon>
@@ -110,7 +110,7 @@ function goModelManager() {
       <template v-else>
         <button
           class="avatar-btn register-btn"
-          :title="t('user.register')"
+          v-tooltip="t('user.register')"
           @click="auth.openLoginModal"
         >
           <el-icon :size="18"><Plus /></el-icon>
@@ -118,7 +118,7 @@ function goModelManager() {
         </button>
         <button
           class="avatar-btn"
-          :title="t('user.login')"
+          v-tooltip="t('user.login')"
           @click="auth.openLoginModal"
         >
           <el-icon :size="20"><UserFilled /></el-icon>
@@ -128,187 +128,6 @@ function goModelManager() {
   </header>
 </template>
 
-<style scoped>
-.app-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 24px;
-  height: 56px;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-color);
-  flex-shrink: 0;
-  position: sticky;
-  top: 0;
-  z-index: 50;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.menu-btn {
-  display: none;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  font-size: 18px;
-}
-
-.menu-btn:hover {
-  background: var(--bg-card);
-  color: var(--text-primary);
-}
-
-.breadcrumb-current {
-  font-family: var(--font-display-serif);
-  font-size: 18px;
-  color: var(--text-primary);
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.lang-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 40px;
-  height: 32px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--accent);
-  cursor: pointer;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  transition: all var(--transition-fast);
-  padding: 0 10px;
-}
-
-.lang-toggle:hover {
-  border-color: var(--accent);
-  box-shadow: 0 0 10px var(--accent-glow);
-  background: var(--accent-glow);
-}
-
-.theme-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  font-size: 18px;
-}
-
-.theme-toggle:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-  box-shadow: 0 0 12px var(--accent-glow);
-}
-
-/* Avatar / User button */
-.avatar-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border: 1px solid var(--border-color);
-  border-radius: 50%;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.avatar-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-  box-shadow: 0 0 10px var(--accent-glow);
-}
-
-.avatar-btn.admin {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.avatar-btn.register-btn {
-  width: auto;
-  border-radius: var(--radius-md);
-  padding: 0 12px;
-  gap: 6px;
-  font-family: var(--font-body);
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.register-text {
-  white-space: nowrap;
-}
-
-.user-info {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 140px;
-}
-
-.user-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.user-role {
-  font-size: 11px;
-  padding: 1px 8px;
-  border-radius: 10px;
-  font-weight: 500;
-}
-
-.user-role.admin {
-  background: var(--accent-glow);
-  color: var(--accent);
-}
-
-.user-role.user {
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
-}
-
-.usage-text {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-@media (max-width: 768px) {
-  .app-header {
-    padding: 0 16px;
-  }
-
-  .menu-btn {
-    display: flex;
-  }
-}
+<style scoped lang="scss">
+@use '../../styles/components/layout/app-header.scss' as *;
 </style>

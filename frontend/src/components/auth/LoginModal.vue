@@ -154,62 +154,6 @@ function toggleMode() {
   </el-dialog>
 </template>
 
-<style scoped>
-.login-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 20px;
-  padding: 8px 0;
-}
-
-.login-icon {
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  background: var(--accent-glow);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--accent);
-}
-
-.form-section {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.input-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.input-group label {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-
-.toggle-mode {
-  background: none;
-  border: none;
-  color: var(--accent);
-  font-size: 13px;
-  cursor: pointer;
-  padding: 4px 8px;
-  transition: opacity var(--transition-fast);
-}
-
-.toggle-mode:hover {
-  opacity: 0.8;
-  text-decoration: underline;
-}
-
-@media (max-width: 768px) {
-  .login-content { gap: 20px; }
-  .login-icon { width: 52px; height: 52px; }
-}
+<style scoped lang="scss">
+@use '../../styles/components/auth/login-modal.scss' as *;
 </style>

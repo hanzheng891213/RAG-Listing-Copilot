@@ -170,7 +170,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
   async function fetchFromServer() {
     isLoading.value = true
     try {
-      const res = await listDocuments()
+      const res = (await listDocuments()) as unknown as { documents?: any[] }
       const serverDocs = (res.documents ?? []).map((d: any) => ({
         ...d,
         excerpt: truncate(toPlainText(d.content ?? ''), 200),
@@ -219,7 +219,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
   async function searchOnServer(q: string, platform?: string) {
     isSearching.value = true
     try {
-      const res = await searchKnowledge(q, platform)
+      const res = (await searchKnowledge(q, platform)) as unknown as { results?: any[] }
       results.value = (res.results ?? []).map((r: any) => ({
         document: localizeDoc({
           ...r.document,

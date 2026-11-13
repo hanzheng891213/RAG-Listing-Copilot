@@ -16,6 +16,36 @@ export interface ChatRequest {
   maxTokens?: number
 }
 
+export interface ListingPatch {
+  title?: string
+  bulletPoints?: string[]
+  description?: string
+  keywords?: string[]
+}
+
+export interface ApplyDirectionRequest {
+  /** The user's optimisation instruction (the message being applied). */
+  direction: string
+  /** The assistant reply the user clicked; fenced context for the editor. */
+  suggestion?: string
+  listing: GeneratedListing
+  providerId?: string
+  apiKey?: string
+  model?: string
+  maxTokens?: number
+}
+
+/**
+ * Turns an optimisation direction into a structured listing patch.
+ *
+ * The chat endpoint answers in prose, so "apply" cannot reuse its text as
+ * fields. This call asks the same provider for a strict JSON listing and
+ * returns only the patch; the caller decides which fields really changed.
+ */
+export function applyListingDirection(data: ApplyDirectionRequest): Promise<{ patch: ListingPatch }> {
+  return client.post('/chat-listing/apply', data) as unknown as Promise<{ patch: ListingPatch }>
+}
+
 export interface ChatResponse {
   reply: string
   usage?: {

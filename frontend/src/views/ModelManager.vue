@@ -1,58 +1,45 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, computed } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
 import { PieChart, BarChart } from 'echarts/charts'
 import { TitleComponent, TooltipComponent, LegendComponent, GridComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { useI18n } from 'vue-i18n'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import ConfirmButton from '@/components/common/ConfirmButton.vue'
 import {
+  emptyUsageStats,
   getUsageStats,
+  normaliseUsageStats,
+  type ModelProvider,
+  type ProviderConfig,
   type UsageStats,
 } from '@/api/models'
 import { useModelStore } from '@/stores/modelStore'
 
 use([PieChart, BarChart, TitleComponent, TooltipComponent, LegendComponent, GridComponent, CanvasRenderer])
 
-const { t } = useI18n()
+/**
+ * Model manager, laid out after the DeepSeek Harness models page: one row per
+ * provider, a single editor open at a time, credentials and extras inside it.
+ *
+ * Provider-side model catalogues are gone on purpose — the shipped model names
+ * age faster than this page can be updated. A provider now carries one free
+ * model id typed by the user, and everything else is credential + endpoint.
+ */
+const { t, te } = useI18n()
 const modelStore = useModelStore()
 
-const selectedId = ref('deepseek')
-const saving = ref<Record<string, boolean>>({})
-const showKey = ref<Record<string, boolean>>({})
-const usageStats = ref<UsageStats>({
-  totalCost: 0, totalTokens: 0, totalPromptTokens: 0, totalCompletionTokens: 0, totalCalls: 0,
-  byProvider: [], byModel: [], daily: [],
-})
+const editingId = ref('')
+const saving = ref(false)
+const showAdvanced = ref(false)
+const usageLoading = ref(false)
+const rangeDays = ref(30)
+const usageStats = ref<UsageStats>(emptyUsageStats())
 
-const providers = computed(() => modelStore.providers)
-const configs = computed(() => modelStore.configs)
-
-const selectedProvider = computed(() =>
-  providers.value.find((p) => p.id === selectedId.value),
-)
-
-const selectedConfig = computed(() =>
-  configs.value.find((c) => c.providerId === selectedId.value),
-)
-
-const editForm = ref({
-  providerId: '', apiKey: '', activeModel: '',
-  temperature: 0.7, maxTokens: 4096,
-})
-
-watch(selectedId, (id) => {
-  const cfg = configs.value.find((c) => c.providerId === id)
-  if (cfg) {
-    editForm.value = { ...cfg, apiKey: '' }
-  }
-})
-
-const configuredProviders = computed(() =>
-  configs.value.filter((c) => c.apiKey && c.providerId !== 'custom'),
-)
+const adding = ref(false)
+const addForm = ref({ name: '', baseUrl: '' })
 
 const PROVIDER_COLORS: Record<string, string> = {
   deepseek: '#4F46E5',
@@ -61,7 +48,218 @@ const PROVIDER_COLORS: Record<string, string> = {
   custom: '#6B7280',
 }
 
-/** Blend a hex colour toward white, keeping one provider's models related. */
+const providers = computed(() => modelStore.providers)
+const configs = computed(() => modelStore.configs)
+
+/** Draft of the currently edited provider; never the stored object. */
+const editForm = ref<ProviderConfig>({
+  providerId: '',
+  apiKey: '',
+  activeModel: '',
+  temperature: 0.7,
+  maxTokens: 4096,
+  baseUrl: '',
+})
+
+function displayName(provider: ModelProvider): string {
+  const key = `modelManager.providerNames.${provider.id}`
+  return te(key) ? t(key) : provider.name
+}
+
+function isConfigured(providerId: string): boolean {
+  return Boolean(configs.value.find((c) => c.providerId === providerId && c.apiKey))
+}
+
+function isActive(providerId: string): boolean {
+  return modelStore.activeProviderId === providerId
+}
+
+function storedKeyOf(providerId: string): string {
+  return modelStore.getConfig(providerId)?.apiKey || ''
+}
+
+function endpointOf(provider: ModelProvider): string {
+  return modelStore.baseUrlFor(provider.id) || provider.baseUrl || ''
+}
+
+function hostOf(url: string): string {
+  if (!url) return ''
+  try {
+    return new URL(url).host
+  } catch {
+    return url
+  }
+}
+
+function loadDraft(providerId: string): void {
+  const provider = providers.value.find((p) => p.id === providerId)
+  if (!provider) return
+  const cfg = configs.value.find((c) => c.providerId === providerId)
+  editForm.value = {
+    providerId,
+    // A stored key is never read back into the input; blank means "keep it".
+    apiKey: '',
+    activeModel: cfg?.activeModel || '',
+    temperature: cfg?.temperature ?? 0.7,
+    maxTokens: cfg?.maxTokens ?? 4096,
+    baseUrl: cfg?.baseUrl || provider.baseUrl || '',
+  }
+  // A provider with no directory endpoint needs its address immediately.
+  showAdvanced.value = !cfg?.baseUrl && !provider.baseUrl
+}
+
+function onAdvancedToggle(event: Event): void {
+  showAdvanced.value = (event.target as HTMLDetailsElement).open
+}
+
+function toggleEditor(providerId: string): void {
+  adding.value = false
+  if (editingId.value === providerId) {
+    editingId.value = ''
+    return
+  }
+  loadDraft(providerId)
+  editingId.value = providerId
+}
+
+function closeEditor(): void {
+  editingId.value = ''
+}
+
+function startAdd(): void {
+  editingId.value = ''
+  adding.value = true
+  addForm.value = { name: '', baseUrl: '' }
+}
+
+function cancelAdd(): void {
+  adding.value = false
+  addForm.value = { name: '', baseUrl: '' }
+}
+
+function onAddProvider(): void {
+  const name = addForm.value.name.trim()
+  if (!name) {
+    ElMessage.warning(t('modelManager.providerNameRequired'))
+    return
+  }
+  const id = modelStore.addProvider({ name, baseUrl: addForm.value.baseUrl })
+  if (!id) {
+    ElMessage.error(t('modelManager.addProviderFailed'))
+    return
+  }
+  adding.value = false
+  ElMessage.success(t('modelManager.providerAdded'))
+  loadDraft(id)
+  editingId.value = id
+}
+
+async function onSave(providerId: string): Promise<void> {
+  if (saving.value) return
+
+  const existing = modelStore.getConfig(providerId)
+  const apiKey = editForm.value.apiKey.trim() || existing?.apiKey || ''
+  if (!apiKey) {
+    ElMessage.warning(t('modelManager.keyRequired'))
+    return
+  }
+
+  const activeModel = editForm.value.activeModel.trim()
+  if (!activeModel) {
+    ElMessage.warning(t('modelManager.modelRequired'))
+    return
+  }
+
+  // A provider without a directory endpoint (the built-in 自定义 row, or a
+  // relay) must get one here — otherwise requests would be sent to "/chat/…".
+  const baseUrl = (editForm.value.baseUrl ?? '').trim()
+  const directoryUrl = providers.value.find((p) => p.id === providerId)?.baseUrl || ''
+  if (!baseUrl && !directoryUrl) {
+    showAdvanced.value = true
+    ElMessage.warning(t('modelManager.baseUrlRequired'))
+    return
+  }
+
+  saving.value = true
+  try {
+    modelStore.updateProviderConfig({
+      providerId,
+      apiKey,
+      activeModel,
+      temperature: editForm.value.temperature,
+      maxTokens: editForm.value.maxTokens,
+      baseUrl,
+    })
+    if (!modelStore.activeProviderId) modelStore.setActiveProvider(providerId)
+    editingId.value = ''
+    ElMessage.success(t('modelManager.saved'))
+  } catch {
+    ElMessage.error(t('modelManager.saveFailed'))
+  } finally {
+    saving.value = false
+  }
+}
+
+function onDeleteKey(providerId: string): void {
+  modelStore.clearProviderKey(providerId)
+  editForm.value.apiKey = ''
+  ElMessage.success(t('modelManager.keyDeleted'))
+}
+
+async function onDeleteProvider(providerId: string): Promise<void> {
+  const provider = providers.value.find((p) => p.id === providerId)
+  if (!provider) return
+  try {
+    await ElMessageBox.confirm(
+      t('modelManager.confirmDeleteProvider', { name: displayName(provider) }),
+      t('common.confirmTitle'),
+      { type: 'warning', confirmButtonText: t('common.delete'), cancelButtonText: t('common.cancel') },
+    )
+  } catch {
+    return
+  }
+  if (modelStore.removeProvider(providerId)) {
+    if (editingId.value === providerId) editingId.value = ''
+    ElMessage.success(t('modelManager.providerDeleted'))
+  }
+}
+
+function onUseAsDefault(providerId: string): void {
+  if (!isConfigured(providerId)) {
+    ElMessage.warning(t('modelManager.keyRequiredFirst'))
+    return
+  }
+  modelStore.setActiveProvider(providerId)
+  ElMessage.success(t('modelManager.defaultSet'))
+}
+
+async function loadStats(): Promise<void> {
+  usageLoading.value = true
+  try {
+    usageStats.value = normaliseUsageStats(await getUsageStats(rangeDays.value))
+  } catch (error) {
+    console.error('[ModelManager] usage stats failed:', error)
+    usageStats.value = emptyUsageStats()
+  } finally {
+    usageLoading.value = false
+  }
+}
+
+async function loadData(): Promise<void> {
+  try {
+    await modelStore.loadConfigs()
+  } catch {
+    // directory unavailable: local configs still render
+  }
+  await loadStats()
+}
+
+watch(rangeDays, () => void loadStats())
+
+onMounted(loadData)
+
+// ── Charts ───────────────────────────────────────────────────────────
+
 function lighten(hex: string, amount: number): string {
   const n = parseInt(hex.slice(1), 16)
   const to2 = (c: number) => Math.round(c).toString(16).padStart(2, '0')
@@ -69,29 +267,34 @@ function lighten(hex: string, amount: number): string {
   return `#${to2(mix((n >> 16) & 255))}${to2(mix((n >> 8) & 255))}${to2(mix(n & 255))}`
 }
 
-function shorten(s: string, max: number): string {
-  return s.length > max ? `${s.slice(0, max - 1)}…` : s
+function shorten(value: string, max: number): string {
+  return value.length > max ? `${value.slice(0, max - 1)}…` : value
 }
 
-/**
- * Pie data is per model, not per provider — a provider can serve several models
- * and those need to be told apart, so each also gets a shade of its provider's
- * colour rather than an unrelated palette entry.
- */
+const avgTokens = computed(() => {
+  const calls = usageStats.value.totalCalls
+  return calls > 0 ? Math.round(usageStats.value.totalTokens / calls) : 0
+})
+
+const modelRows = computed(() =>
+  [...usageStats.value.byModel]
+    .sort((a, b) => b.tokens - a.tokens)
+    .map((row) => ({
+      ...row,
+      share: usageStats.value.totalTokens > 0 ? (row.tokens / usageStats.value.totalTokens) * 100 : 0,
+    })),
+)
+
 const pieData = computed(() => {
   const seen = new Map<string, number>()
   return usageStats.value.byModel.map((m) => {
     const nth = seen.get(m.providerId) ?? 0
     seen.set(m.providerId, nth + 1)
-    const base = PROVIDER_COLORS[m.providerId] || '#6B7280'
+    const base = PROVIDER_COLORS[m.providerId] || '#2dd4a8'
     return {
-      // Full name for the legend and tooltip…
       name: m.name,
-      // …but the on-slice label carries only the model: a truncated
-      // "Provider · Model" collapses two models of one provider into identical
-      // text, which is exactly what the per-model split exists to avoid.
       labelName: shorten(m.name.split(' · ').pop() || m.name, 18),
-      value: m.cost,
+      value: Number(m.cost.toFixed(4)),
       itemStyle: { color: nth === 0 ? base : lighten(base, Math.min(nth * 0.3, 0.75)) },
     }
   })
@@ -111,11 +314,9 @@ const pieOption = computed(() => ({
   },
   series: [{
     type: 'pie',
-    radius: ['40%', '62%'],
+    radius: ['42%', '64%'],
     center: ['50%', '44%'],
-    itemStyle: { borderRadius: 4, borderColor: '#2dd4a8', borderWidth: 0.1 },
-    // Labels sit outside on leader lines. moveOverlap pushes colliding labels
-    // apart vertically instead of letting them stack or dropping them.
+    itemStyle: { borderRadius: 4, borderColor: 'rgba(255,255,255,0.08)', borderWidth: 1 },
     avoidLabelOverlap: true,
     labelLayout: { moveOverlap: 'shiftY', hideOverlap: false },
     label: {
@@ -131,7 +332,7 @@ const pieOption = computed(() => ({
 
 const barOption = computed(() => ({
   tooltip: { trigger: 'axis' },
-  grid: { left: 40, right: 16, top: 10, bottom: 24 },
+  grid: { left: 44, right: 16, top: 12, bottom: 26 },
   xAxis: {
     type: 'category',
     data: usageStats.value.daily.map((d) => d.date.slice(5)),
@@ -139,400 +340,336 @@ const barOption = computed(() => ({
   },
   yAxis: {
     type: 'value',
-    axisLabel: { fontSize: 10, formatter: (v: number) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v) },
+    axisLabel: {
+      fontSize: 10,
+      formatter: (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)),
+    },
   },
   series: [{
     type: 'bar',
-    barWidth: '10%',
+    barWidth: '42%',
     data: usageStats.value.daily.map((d) => d.tokens),
     itemStyle: { borderRadius: [4, 4, 0, 0], color: '#2dd4a8' },
-    emphasis: {
-      itemStyle: { color: '#58d7b7' },
-    },
+    emphasis: { itemStyle: { color: '#58d7b7' } },
   }],
 }))
 
-async function loadData() {
-  try {
-    await modelStore.loadConfigs()
-    usageStats.value = await getUsageStats()
+const hasUsage = computed(
+  () => usageStats.value.totalCalls > 0 || usageStats.value.byModel.length > 0,
+)
 
-    const cfg = configs.value.find((c) => c.providerId === selectedId.value)
-    if (cfg) editForm.value = { ...cfg, apiKey: '' }
-  } catch {
-    // backend may not be available
-  }
+function formatCost(value: number): string {
+  return Number(value ?? 0).toFixed(4)
 }
 
-async function onSave(providerId: string) {
-  saving.value[providerId] = true
-  try {
-    const existing = modelStore.getConfig(providerId)
-    const config = {
-      providerId,
-      apiKey: editForm.value.apiKey || existing?.apiKey || '',
-      activeModel: editForm.value.activeModel,
-      temperature: editForm.value.temperature,
-      maxTokens: editForm.value.maxTokens,
-    }
-    modelStore.updateProviderConfig(config)
-    ElMessage.success(t('modelManager.saved'))
-    // Reset key field after save
-    editForm.value.apiKey = ''
-  } catch {
-    ElMessage.error(t('modelManager.saveFailed'))
-  } finally {
-    saving.value[providerId] = false
-  }
+function formatTokens(value: number): string {
+  const n = Number(value ?? 0)
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+  return String(n)
 }
-
-function onDeleteKey(providerId: string) {
-  modelStore.clearProviderKey(providerId)
-  ElMessage.success(t('modelManager.keyDeleted'))
-  editForm.value.apiKey = ''
-}
-
-function onSelectProvider(id: string) {
-  selectedId.value = id
-  showKey.value[id] = false
-}
-
-onMounted(loadData)
 </script>
 
 <template>
   <div class="model-manager">
     <div class="page-header">
-      <h1 class="page-title">{{ t('modelManager.title') }}</h1>
       <p class="page-desc">{{ t('modelManager.description') }}</p>
     </div>
 
     <div class="manager-layout">
-      <!-- Left: Provider Config -->
-      <div class="panel panel-left">
-        <div class="panel-title">{{ t('modelManager.providers') }}</div>
+      <!-- ── Left: model providers ─────────────────────────────────── -->
+      <section class="provider-panel">
+        <div class="provider-panel__head">
+          <div>
+            <h2 class="panel-title">{{ t('modelManager.providers') }}</h2>
+            <p class="panel-hint">{{ t('modelManager.providersHint') }}</p>
+          </div>
+          <span class="provider-count">{{ providers.length }}</span>
+        </div>
 
-        <div class="provider-list">
-          <div
+        <ul class="provider-list">
+          <li
             v-for="p in providers"
             :key="p.id"
-            :class="['provider-card', { active: selectedId === p.id }]"
-            @click="onSelectProvider(p.id)"
+            class="provider-card"
+            :class="{ open: editingId === p.id }"
           >
-            <div class="provider-name">{{ t('modelManager.providerNames.' + p.id) }}</div>
-            <div class="provider-status">
-              <span
-                :class="['dot', configs.find(c => c.providerId === p.id && c.apiKey) ? 'green' : 'gray']"
-              />
-              {{ configs.find(c => c.providerId === p.id && c.apiKey) ? t('common.configured') : t('common.noKey') }}
+            <div class="provider-head">
+              <span class="provider-identity">
+                <span
+                  class="credential-dot"
+                  :class="isConfigured(p.id) ? 'ok' : 'off'"
+                  role="img"
+                  :aria-label="isConfigured(p.id) ? t('modelManager.keyConfigured') : t('modelManager.keyMissing')"
+                  :title="isConfigured(p.id) ? t('modelManager.keyConfigured') : t('modelManager.keyMissing')"
+                />
+                <span class="provider-name">{{ displayName(p) }}</span>
+                <span v-if="modelStore.isCustomProvider(p.id)" class="provider-tag">
+                  {{ t('modelManager.customTag') }}
+                </span>
+                <span v-if="isActive(p.id)" class="provider-tag default">
+                  {{ t('modelManager.defaultBadge') }}
+                </span>
+              </span>
+
+              <span class="provider-endpoint">{{ hostOf(endpointOf(p)) }}</span>
+
+              <span class="provider-actions">
+                <button
+                  type="button"
+                  class="ghost-btn"
+                  :aria-label="t('modelManager.editProvider', { name: displayName(p) })"
+                  @click="toggleEditor(p.id)"
+                >
+                  {{ editingId === p.id ? t('modelManager.collapse') : t('modelManager.edit') }}
+                </button>
+                <button
+                  v-if="modelStore.isCustomProvider(p.id)"
+                  type="button"
+                  class="ghost-btn danger"
+                  :aria-label="t('modelManager.deleteProvider')"
+                  @click="onDeleteProvider(p.id)"
+                >
+                  {{ t('common.delete') }}
+                </button>
+              </span>
+            </div>
+
+            <!-- Inline editor: one card open at a time, drafts stay inside. -->
+            <div v-if="editingId === p.id" class="provider-editor">
+              <div class="editor-head">
+                <span class="editor-title">{{ t('modelManager.settings', { name: displayName(p) }) }}</span>
+                <span v-if="!modelStore.isCustomProvider(p.id)" class="editor-route">{{ p.id }}</span>
+              </div>
+
+              <div class="field">
+                <div class="field-label">
+                  <span>{{ t('modelManager.apiKey') }}</span>
+                  <a
+                    v-if="p.signupUrl"
+                    :href="p.signupUrl"
+                    target="_blank"
+                    rel="noopener"
+                    class="field-link"
+                  >
+                    {{ t('modelManager.getApiKey') }} ↗
+                  </a>
+                </div>
+
+                <div v-if="storedKeyOf(p.id)" class="stored-key">
+                  <code>{{ modelStore.maskKey(storedKeyOf(p.id)) }}</code>
+                  <ConfirmButton
+                    size="small"
+                    text
+                    type="danger"
+                    :confirm-title="t('common.confirmTitle')"
+                    :confirm-message="t('modelManager.confirmDeleteKey')"
+                    @click="onDeleteKey(p.id)"
+                  >
+                    {{ t('modelManager.deleteKey') }}
+                  </ConfirmButton>
+                </div>
+
+                <el-input
+                  v-model="editForm.apiKey"
+                  type="password"
+                  show-password
+                  size="small"
+                  autocomplete="new-password"
+                  :placeholder="storedKeyOf(p.id) ? t('modelManager.keyKeepHint') : t('modelManager.apiKeyPlaceholder')"
+                />
+                <p v-if="storedKeyOf(p.id)" class="field-hint">{{ t('modelManager.keyStoredHint') }}</p>
+              </div>
+
+              <div class="field">
+                <label class="field-label">{{ t('modelManager.model') }}</label>
+                <el-input
+                  v-model="editForm.activeModel"
+                  size="small"
+                  :placeholder="t('modelManager.modelPlaceholder')"
+                />
+                <p class="field-hint">{{ t('modelManager.modelHint') }}</p>
+              </div>
+
+              <details class="advanced" :open="showAdvanced" @toggle="onAdvancedToggle">
+                <summary class="advanced-summary">{{ t('modelManager.customized') }}</summary>
+                <div class="advanced-body">
+                  <div class="field">
+                    <label class="field-label">{{ t('modelManager.baseUrl') }}</label>
+                    <el-input
+                      v-model="editForm.baseUrl"
+                      size="small"
+                      :placeholder="p.baseUrl || 'https://api.example.com/v1'"
+                    />
+                  </div>
+
+                  <div class="param-grid">
+                    <div class="field">
+                      <label class="field-label">{{ t('modelManager.temperature') }}</label>
+                      <el-input-number
+                        v-model="editForm.temperature"
+                        :min="0"
+                        :max="2"
+                        :step="0.1"
+                        :precision="1"
+                        size="small"
+                        controls-position="right"
+                        style="width: 100%"
+                      />
+                    </div>
+                    <div class="field">
+                      <label class="field-label">{{ t('modelManager.maxTokens') }}</label>
+                      <el-input-number
+                        v-model="editForm.maxTokens"
+                        :min="256"
+                        :max="32768"
+                        :step="256"
+                        size="small"
+                        controls-position="right"
+                        style="width: 100%"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </details>
+
+              <div class="editor-actions">
+                <el-button
+                  size="small"
+                  text
+                  type="primary"
+                  :disabled="!isConfigured(p.id) || isActive(p.id)"
+                  @click="onUseAsDefault(p.id)"
+                >
+                  {{ t('modelManager.setDefault') }}
+                </el-button>
+                <span class="spacer" />
+                <el-button size="small" @click="closeEditor">{{ t('common.cancel') }}</el-button>
+                <el-button size="small" type="primary" :loading="saving" @click="onSave(p.id)">
+                  {{ t('common.save') }}
+                </el-button>
+              </div>
+            </div>
+          </li>
+        </ul>
+
+        <!-- Add a provider the directory does not know about. -->
+        <button v-if="!adding" type="button" class="add-provider-btn" @click="startAdd">
+          <el-icon><Plus /></el-icon>
+          {{ t('modelManager.addProvider') }}
+        </button>
+
+        <div v-else class="add-card">
+          <div class="editor-head">
+            <span class="editor-title">{{ t('modelManager.newProvider') }}</span>
+          </div>
+          <div class="field">
+            <label class="field-label">{{ t('modelManager.providerName') }}</label>
+            <el-input
+              v-model="addForm.name"
+              size="small"
+              :placeholder="t('modelManager.providerNamePlaceholder')"
+            />
+          </div>
+          <div class="field">
+            <label class="field-label">{{ t('modelManager.baseUrl') }}</label>
+            <el-input v-model="addForm.baseUrl" size="small" placeholder="https://api.example.com/v1" />
+          </div>
+          <div class="editor-actions">
+            <span class="spacer" />
+            <el-button size="small" @click="cancelAdd">{{ t('common.cancel') }}</el-button>
+            <el-button size="small" type="primary" @click="onAddProvider">
+              {{ t('modelManager.add') }}
+            </el-button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Right: usage analytics ────────────────────────────────── -->
+      <div class="panel panel-right">
+        <div class="panel-head">
+          <span class="panel-title">{{ t('modelManager.usageAnalytics') }}</span>
+          <el-radio-group v-model="rangeDays" size="small">
+            <el-radio-button :value="7">{{ t('modelManager.days7') }}</el-radio-button>
+            <el-radio-button :value="30">{{ t('modelManager.days30') }}</el-radio-button>
+            <el-radio-button :value="90">{{ t('modelManager.days90') }}</el-radio-button>
+          </el-radio-group>
+        </div>
+
+        <div v-loading="usageLoading" class="usage-body">
+          <div class="summary-cards">
+            <div class="summary-card">
+              <div class="card-value">￥{{ formatCost(usageStats.totalCost) }}</div>
+              <div class="card-label">{{ t('modelManager.totalCost') }}</div>
+            </div>
+            <div class="summary-card">
+              <div class="card-value">{{ formatTokens(usageStats.totalTokens) }}</div>
+              <div class="card-label">{{ t('modelManager.totalTokens') }}</div>
+            </div>
+            <div class="summary-card">
+              <div class="card-value">{{ usageStats.totalCalls }}</div>
+              <div class="card-label">{{ t('modelManager.apiCalls') }}</div>
+            </div>
+            <div class="summary-card">
+              <div class="card-value">{{ formatTokens(avgTokens) }}</div>
+              <div class="card-label">{{ t('modelManager.avgTokens') }}</div>
             </div>
           </div>
-        </div>
 
-        <!-- Configured models summary -->
-        <div v-if="configuredProviders.length > 0" class="configured-summary">
-          <div class="summary-title">{{ t('model.configuredModels') }}</div>
-          <div v-for="c in configuredProviders" :key="c.providerId" class="configured-item">
-            <span class="configured-name">{{ t('modelManager.providerNames.' + c.providerId) }}</span>
-            <span class="configured-model">{{ c.activeModel }}</span>
-            <span class="configured-key">{{ modelStore.maskKey(c.apiKey) }}</span>
-          </div>
-        </div>
-
-        <div v-if="selectedProvider" class="config-form">
-          <div class="form-title">{{ t('modelManager.settings', { name: t('modelManager.providerNames.' + selectedProvider.id) }) }}</div>
-
-          <!-- Signup link -->
-          <div v-if="selectedProvider.signupUrl" class="signup-link">
-            <a :href="selectedProvider.signupUrl" target="_blank" rel="noopener">
-              {{ t('modelManager.getApiKey') }} &rarr;
-            </a>
-            <span class="signup-hint">{{ t('modelManager.apiConsole', { name: t('modelManager.providerNames.' + selectedProvider.id) }) }}</span>
-          </div>
-
-          <!-- Current key display -->
-          <div v-if="selectedConfig?.apiKey" class="current-key">
-            <span class="key-label">{{ t('modelManager.apiKey') }}:</span>
-            <code class="key-value">{{ modelStore.maskKey(selectedConfig.apiKey) }}</code>
-            <ConfirmButton size="small" text type="danger" :confirm-title="t('common.confirmTitle')" :confirm-message="t('modelManager.confirmDeleteKey')" @click="onDeleteKey(selectedId)">
-              {{ t('modelManager.deleteKey') }}
-            </ConfirmButton>
-          </div>
-
-          <!-- API Key -->
-          <div class="form-group">
-            <label>{{ selectedConfig?.apiKey ? 'Update ' + t('modelManager.apiKey') : t('modelManager.apiKey') }}</label>
-            <el-input
-              v-model="editForm.apiKey"
-              :type="showKey[selectedId] ? 'text' : 'password'"
-              :placeholder="selectedConfig?.apiKey ? '(leave blank to keep current key)' : t('modelManager.apiKeyPlaceholder')"
+          <div class="chart-section">
+            <div class="chart-title">{{ t('modelManager.usageByModel') }}</div>
+            <el-table
+              v-if="modelRows.length > 0"
+              :data="modelRows"
               size="small"
+              class="usage-table"
+              :empty-text="t('modelManager.noUsageData')"
             >
-              <template #suffix>
-                <el-button text size="small" @click="showKey[selectedId] = !showKey[selectedId]">
-                  {{ showKey[selectedId] ? t('common.hide') : t('common.show') }}
-                </el-button>
-              </template>
-            </el-input>
+              <el-table-column prop="name" :label="t('modelManager.usageModel')" min-width="180" show-overflow-tooltip />
+              <el-table-column :label="t('modelManager.tokens')" width="100" align="right">
+                <template #default="{ row }">{{ formatTokens(row.tokens) }}</template>
+              </el-table-column>
+              <el-table-column :label="t('modelManager.calls')" width="80" align="right">
+                <template #default="{ row }">{{ row.calls }}</template>
+              </el-table-column>
+              <el-table-column :label="t('modelManager.cost')" width="96" align="right">
+                <template #default="{ row }">￥{{ formatCost(row.cost) }}</template>
+              </el-table-column>
+              <el-table-column :label="t('modelManager.share')" width="150">
+                <template #default="{ row }">
+                  <div class="share-cell">
+                    <div class="share-bar"><span :style="{ width: `${Math.min(100, row.share)}%` }" /></div>
+                    <span class="share-value">{{ row.share.toFixed(1) }}%</span>
+                  </div>
+                </template>
+              </el-table-column>
+            </el-table>
+            <div v-else class="chart-empty">{{ t('modelManager.noUsageData') }}</div>
           </div>
 
-          <!-- Model -->
-          <div class="form-group">
-            <label>{{ t("modelManager.model") }}</label>
-            <el-select v-model="editForm.activeModel" size="small" style="width: 100%" filterable allow-create default-first-option>
-              <el-option
-                v-for="m in selectedProvider.models"
-                :key="m.id"
-                :label="m.name"
-                :value="m.id"
-              />
-            </el-select>
-          </div>
+          <div v-if="hasUsage" class="chart-grid">
+            <div class="chart-section">
+              <div class="chart-title">{{ t('modelManager.costByModel') }}</div>
+              <div v-if="pieData.length > 0" class="chart-wrap">
+                <VChart :option="pieOption" autoresize style="height: 250px" />
+              </div>
+              <div v-else class="chart-empty">{{ t('modelManager.noUsageData') }}</div>
+            </div>
 
-          <!-- Temperature -->
-          <div class="form-group">
-            <label>{{ t("modelManager.temperature") }}: {{ editForm.temperature }}</label>
-            <el-slider
-              v-model="editForm.temperature"
-              :min="0" :max="2" :step="0.1"
-              size="small"
-            />
+            <div class="chart-section">
+              <div class="chart-title">{{ t('modelManager.dailyTokenUsage') }}</div>
+              <div v-if="usageStats.daily.length > 0" class="chart-wrap">
+                <VChart :option="barOption" autoresize style="height: 250px" />
+              </div>
+              <div v-else class="chart-empty">{{ t('modelManager.noUsageData') }}</div>
+            </div>
           </div>
-
-          <!-- Max Tokens -->
-          <div class="form-group">
-            <label>{{ t("modelManager.maxTokens") }}: {{ editForm.maxTokens }}</label>
-            <el-input-number
-              v-model="editForm.maxTokens"
-              :min="256" :max="32768" :step="256"
-              size="small"
-              style="width: 100%"
-            />
-          </div>
-
-          <el-button
-            type="primary"
-            :loading="saving[selectedId]"
-            @click="onSave(selectedId)"
-            style="width: 100%; margin-top: 8px"
-          >
-            {{ t("modelManager.save") }}
-          </el-button>
-        </div>
-      </div>
-
-      <!-- Right: Usage Charts -->
-      <div class="panel panel-right">
-        <div class="panel-title">{{ t('modelManager.usageAnalytics') }}</div>
-
-        <!-- Summary Cards -->
-        <div class="summary-cards">
-          <div class="summary-card">
-            <div class="card-value">￥{{ usageStats.totalCost.toFixed(4) }}（RMB）</div>
-            <div class="card-label">{{ t("modelManager.totalCost") }}</div>
-          </div>
-          <div class="summary-card">
-            <div class="card-value">{{ (usageStats.totalTokens / 1000).toFixed(0) }}K</div>
-            <div class="card-label">{{ t("modelManager.totalTokens") }}</div>
-          </div>
-          <div class="summary-card">
-            <div class="card-value">{{ usageStats.totalCalls }}</div>
-            <div class="card-label">{{ t("modelManager.apiCalls") }}</div>
-          </div>
-        </div>
-
-        <!-- Pie Chart: Cost by Model -->
-        <div class="chart-section">
-          <div class="chart-title">{{ t('modelManager.costByModel') }}</div>
-          <div v-if="usageStats.byModel.length > 0" class="chart-wrap">
-            <VChart :option="pieOption" autoresize style="height: 260px" />
-          </div>
-          <div v-else class="chart-empty">{{ t('modelManager.noUsageData') }}</div>
-        </div>
-
-        <!-- Bar Chart: Daily Tokens -->
-        <div class="chart-section">
-          <div class="chart-title">{{ t('modelManager.dailyTokenUsage') }}</div>
-          <div v-if="usageStats.daily.length > 0" class="chart-wrap">
-            <VChart :option="barOption" autoresize style="height: 200px" />
-          </div>
-          <div v-else class="chart-empty">{{ t('modelManager.noUsageData') }}</div>
         </div>
       </div>
     </div>
   </div>
 </template>
 
-<style scoped>
-.model-manager { max-width: 1440px; }
-.page-header { margin-bottom: 24px; }
-.page-title { font-size: 28px; font-weight: 400; margin-bottom: 8px; }
-.page-desc { color: var(--text-secondary); font-size: 15px; }
-
-.manager-layout {
-  display: grid;
-  grid-template-columns: 360px 1fr;
-  gap: 20px;
-  align-items: start;
-}
-.panel {
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
-  padding: 20px;
-}
-.panel-title {
-  font-size: 16px;
-  font-weight: 500;
-  margin-bottom: 16px;
-  color: var(--text-primary);
-}
-
-/* Provider list */
-.provider-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 20px;
-}
-.provider-card {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 14px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.provider-card:hover { background: var(--bg-secondary); }
-.provider-card.active { border-color: var(--accent); background: rgba(99, 102, 241, 0.05); }
-.provider-name { font-size: 14px; color: var(--text-primary); }
-.provider-status { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 4px; }
-.dot { width: 6px; height: 6px; border-radius: 50%; }
-.dot.green { background: #22c55e; }
-.dot.gray { background: #9ca3af; }
-
-/* Configured summary */
-.configured-summary {
-  border-top: 1px solid var(--border-color);
-  padding-top: 16px;
-  margin-bottom: 16px;
-}
-.summary-title {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-primary);
-  margin-bottom: 8px;
-}
-.configured-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  background: var(--bg-secondary);
-  border-radius: var(--radius-sm);
-  margin-bottom: 4px;
-  font-size: 12px;
-}
-.configured-name { color: var(--text-primary); font-weight: 500; min-width: 60px; }
-.configured-model { color: var(--accent); font-family: monospace; font-size: 11px; }
-.configured-key { color: var(--text-muted); font-family: monospace; font-size: 11px; margin-left: auto; }
-
-/* Current key */
-.current-key {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-  padding: 6px 10px;
-  background: var(--bg-secondary);
-  border-radius: var(--radius-sm);
-  font-size: 12px;
-}
-.key-label { color: var(--text-secondary); }
-.key-value { color: var(--text-muted); font-size: 11px; }
-
-/* Config form */
-.config-form {
-  border-top: 1px solid var(--border-color);
-  padding-top: 16px;
-}
-.form-title { font-size: 14px; font-weight: 500; margin-bottom: 12px; }
-.signup-link {
-  margin-bottom: 12px;
-  padding: 8px 12px;
-  background: var(--bg-secondary);
-  border-radius: var(--radius-sm);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.signup-link a { color: var(--accent); font-size: 13px; text-decoration: none; }
-.signup-link a:hover { text-decoration: underline; }
-.signup-hint { font-size: 11px; color: var(--text-muted); }
-.form-group {
-  margin-bottom: 14px;
-}
-.form-group label {
-  display: block;
-  font-size: 12px;
-  color: var(--text-secondary);
-  margin-bottom: 4px;
-}
-
-/* Summary cards */
-.summary-cards {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  margin-bottom: 24px;
-}
-.summary-card {
-  padding: 16px;
-  background: var(--bg-secondary);
-  border-radius: var(--radius-md);
-  text-align: center;
-}
-.card-value {
-  font-size: 22px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 4px;
-}
-.card-label {
-  font-size: 11px;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-/* Charts */
-.chart-section {
-  margin-bottom: 20px;
-}
-.chart-title {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  margin-bottom: 8px;
-}
-.chart-wrap {
-  background: var(--bg-secondary);
-  border-radius: var(--radius-md);
-  padding: 8px;
-}
-.chart-empty {
-  padding: 40px;
-  text-align: center;
-  color: var(--text-muted);
-  font-size: 13px;
-  background: var(--bg-secondary);
-  border-radius: var(--radius-md);
-}
-
-@media (max-width: 1000px) {
-  .manager-layout { grid-template-columns: 1fr; }
-  .summary-cards { grid-template-columns: 1fr 1fr; }
-}
+<style scoped lang="scss">
+@use '../styles/components/views/model-manager.scss' as *;
 </style>

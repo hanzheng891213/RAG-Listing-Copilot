@@ -24,6 +24,9 @@ const errors: Record<string, Record<string, string>> = {
     ERR_COMPLIANCE_CHECK: '合规检查失败',
     ERR_EXPORT: '导出失败',
     ERR_AI_API: 'AI API 调用失败',
+    ERR_MISSING_DIRECTION: '缺少优化方向',
+    ERR_MISSING_LISTING: '缺少当前 Listing',
+    ERR_APPLY_PARSE: 'AI 返回的内容无法解析为 Listing 修改',
     ERR_VISITOR_DENIED: '此功能仅限管理员使用',
   },
   en: {
@@ -50,6 +53,9 @@ const errors: Record<string, Record<string, string>> = {
     ERR_COMPLIANCE_CHECK: 'Failed to check compliance',
     ERR_EXPORT: 'Failed to export listing',
     ERR_AI_API: 'AI API call failed',
+    ERR_MISSING_DIRECTION: 'Optimisation direction is required',
+    ERR_MISSING_LISTING: 'Current listing is required',
+    ERR_APPLY_PARSE: 'AI did not return a parsable listing patch',
     ERR_VISITOR_DENIED: 'This feature is only available to admin users',
   },
   de: {

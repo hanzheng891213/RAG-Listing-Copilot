@@ -54,6 +54,36 @@ a:hover {
   color: var(--accent-bright);
 }
 
+/* ── Themed tooltip (v-tooltip) ──────────────────────────────────────
+   The native `title` popup is drawn by the OS and is always black; this card
+   uses the same palette as the rest of the app in both themes. */
+.app-tooltip {
+  position: fixed;
+  z-index: 4000;
+  top: 0;
+  left: 0;
+  max-width: min(320px, 80vw);
+  padding: 5px 8px;
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+
+.app-tooltip.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 h1, h2 {
   font-family: var(--font-display-serif);
   font-weight: 700;

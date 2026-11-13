@@ -28,14 +28,6 @@ function severityColor(severity: string) {
   </div>
 </template>
 
-<style scoped>
-.compliance-panel { display: flex; flex-direction: column; gap: 16px; margin-bottom: 24px; }
-.panel-title { font-family: var(--font-body); font-size: 15px; font-weight: 600; color: var(--text-primary); }
-.compliance-list { display: flex; flex-direction: column; gap: 8px; }
-.compliance-item { display: flex; gap: 12px; padding: 12px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-md); align-items: flex-start; transition: all var(--transition-fast); }
-.compliance-item.passed { border-left: 3px solid var(--success); }
-.compliance-item.failed { border-left: 3px solid var(--warning); }
-.compliance-info { display: flex; flex-direction: column; gap: 4px; }
-.compliance-rule { font-size: 13px; font-weight: 500; color: var(--text-primary); }
-.compliance-msg { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+<style scoped lang="scss">
+@use '../../styles/components/listing/compliance-panel.scss' as *;
 </style>

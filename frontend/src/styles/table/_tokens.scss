@@ -1,0 +1,51 @@
+/* ============================================================================
+   表格独立配色体系 / Table colour system
+   ----------------------------------------------------------------------------
+   商品上架表是一张“粘贴进页面的白纸”，所以它有自己的颜色体系，和深色/浅色
+   主题分开。所有表格颜色都从这里派生，组件文件只引用 --table-* 变量。
+   想调整表格观感时，只改本文件即可。
+
+   The listing table is a light "sheet" in both app themes, so it owns a colour
+   system separate from the global dark/light tokens. Everything in ExcelGrid
+   references --table-*; tune the table here and nowhere else.
+   ========================================================================== */
+
+/* Surfaces */
+$surface: #ffffff;
+$surface-alt: #fbfefc;
+$surface-stripe: #f1f8f5;
+$surface-header: #e8f4ef;
+$surface-header-alt: #dff0e9;
+$surface-hover: #eef8f4;
+$surface-selected: #d9f2e9;
+
+/* Lines: cell borders are deliberately dark grey so the grid reads as a sheet. */
+$grid-line: #5f6663;
+$border-strong: #454b49;
+
+/* Text */
+$text: #1f2d28;
+$text-head: #274b41;
+$text-muted: #5d6b66;
+$text-draft: #6f8079;
+
+/* Accent + states */
+$accent: #1a7a6e;
+$accent-strong: #0f5c52;
+$accent-soft: #d9f2e9;
+$danger-surface: #fdecea;
+$danger-border: #d24a42;
+$selection-inner: rgba(255, 255, 255, 0.65);
+
+/* Action rail */
+$action-icon: #ffffff;
+$action-save: $accent;
+$action-save-hover: $accent-strong;
+$action-generate: #2f7de1;
+$action-generate-hover: #2569c4;
+$action-delete: #d64545;
+$action-delete-hover: #b93a3a;
+
+/* Scrollbars */
+$scroll-track: #edf6f2;
+$scroll-thumb: #a9c7bc;

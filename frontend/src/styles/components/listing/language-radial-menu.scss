@@ -1,0 +1,72 @@
+/* components/listing/LanguageRadialMenu.vue — component styles. Edit colours and layout here, not in the SFC. */
+
+.radial-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+}
+
+.radial-anchor {
+  position: fixed;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.radial-item {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 34px;
+  height: 34px;
+  margin: -17px 0 0 -17px;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent-dim, var(--accent));
+  background: var(--bg-card, #16211d);
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  animation: radial-pop 0.28s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.radial-item:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px rgba(45, 212, 168, 0.18), 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.radial-code {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.radial-item:hover .radial-code {
+  color: #fff;
+}
+
+@keyframes radial-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.radial-layer-enter-active,
+.radial-layer-leave-active {
+  transition: opacity 0.15s ease;
+}
+
+.radial-layer-enter-from,
+.radial-layer-leave-to {
+  opacity: 0;
+}

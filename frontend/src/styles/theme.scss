@@ -15,8 +15,6 @@
   --accent-dim: #1a7a6e;
   --accent-glow: rgba(45, 212, 168, 0.15);
   --accent-glow-strong: rgba(45, 212, 168, 0.25);
-  --accent-coral: #e8785a;
-  --accent-coral-glow: rgba(232, 120, 90, 0.15);
   --danger: #e44038;
   --warning: #e8b85a;
   --success: #2dd4a8;
@@ -30,6 +28,19 @@
   --transition-fast: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-base: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-slow: 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ── Listing generator: product status palette ─────────────────────
+     Product rows are pale green until their listing exists, then deep green.
+     Component colours live here so per-panel tuning never touches layout. */
+  --product-idle-bg: #2f6553;
+  --product-idle-border: #4a9579;
+  --product-idle-text: #f1fff9;
+  --product-idle-muted: #b8d8cb;
+  --product-done-bg: #14523f;
+  --product-done-border: #1f7a5f;
+  --product-done-text: #eafff8;
+  --product-done-muted: #a7e5d2;
+  --product-done-accent: #6ff0cd;
 }
 
 html.light {
@@ -49,6 +60,15 @@ html.light {
   --accent-dim: #0f5c52;
   --accent-glow: rgba(26, 122, 110, 0.1);
   --accent-glow-strong: rgba(26, 122, 110, 0.18);
-  --accent-coral: #d46948;
-  --accent-coral-glow: rgba(212, 105, 72, 0.1);
+
+  /* Pale green (not generated) vs deep green (already generated). */
+  --product-idle-bg: #d9f4e7;
+  --product-idle-border: #96d2b6;
+  --product-idle-text: #173b2e;
+  --product-idle-muted: #52705f;
+  --product-done-bg: #17694f;
+  --product-done-border: #0f4e3a;
+  --product-done-text: #f2fff9;
+  --product-done-muted: #b9eeda;
+  --product-done-accent: #c8ffe9;
 }

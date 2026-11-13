@@ -7,7 +7,7 @@ import { modelService } from '../services/model/modelService.js'
 import { getKnowledgeService, type KnowledgeService } from '../services/knowledge/knowledgeService.js'
 import type { Platform } from '../types/index.js'
 import type { JwtPayload } from '../types/auth.js'
-import { extractListingFields, normalizeListingFields, parseFinalJson, streamDemoSse } from '../utils/listingStream.js'
+import { extractListingFields, normalizeListingFields, parseFinalJson, streamDemoSse, type NormalizedListing } from '../utils/listingStream.js'
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -33,6 +33,8 @@ async function buildGroundedPrompt(
 ): Promise<string> {
   const knowledge = await getKs().buildPromptContext(
     deepseekService.buildRetrievalQuery(productData),
+    // Retrieval is English-first on purpose: Chinese rule bodies in the prompt
+    // pull the model's answer language away from the requested one.
     { platform },
   )
   console.log(
@@ -43,6 +45,11 @@ async function buildGroundedPrompt(
 
 function isAdmin(req: Request): boolean {
   return ((req as any).user as JwtPayload)?.role === 'admin'
+}
+
+/** Model output → the four listing fields, tolerating code fences. */
+function parseListing(content?: string): NormalizedListing {
+  return normalizeListingFields(parseFinalJson(content || '') ?? {})
 }
 
 // GET /api/upload-supplier - endpoint-existence probe for the frontend.
@@ -125,19 +132,19 @@ router.post('/generate-listing', async (req: Request, res: Response) => {
     console.log('[API] Admin generate — provider:', providerId, 'model:', model)
     try {
       const prompt = await buildGroundedPrompt(productData, platform, template, language)
-
-      const systemMsg = language && language !== 'english'
-        ? `You are a helpful e-commerce listing assistant. Respond in JSON format with: title, bulletPoints (array of 5 strings), description, keywords (array of strings). All content MUST be written in ${language}.`
-        : 'You are a helpful e-commerce listing assistant. Respond in JSON format with: title, bulletPoints (array of 5 strings), description, keywords (array of strings).'
+      const provider = providerId || 'deepseek'
+      const options = {
+        model,
+        temperature,
+        max_tokens: maxTokens,
+        disableThinking: provider === 'deepseek',
+      }
 
       const data = await modelService.callProviderAPI(
-        providerId || 'deepseek',
+        provider,
         apiKey,
-        [
-          { role: 'system', content: systemMsg },
-          { role: 'user', content: prompt },
-        ],
-        { model, temperature, max_tokens: maxTokens, disableThinking: (providerId || 'deepseek') === 'deepseek' },
+        deepseekService.buildMessages(prompt, language),
+        options,
       )
 
       if (!data) {
@@ -145,22 +152,44 @@ router.post('/generate-listing', async (req: Request, res: Response) => {
         return
       }
 
-      const content = data.choices[0]?.message?.content || '{}'
-      const parsed = JSON.parse(content)
+      let listing = parseListing(data.choices?.[0]?.message?.content)
+
+      // One corrective retry: a listing written in the wrong language is not
+      // something the table can hold, and a second, stricter call is cheaper
+      // than shipping it.
+      if (deepseekService.hasLanguageDrift(listing, language)) {
+        console.warn(
+          `[API] Language drift (target=${language || 'english'}) — retrying once: "${listing.title.slice(0, 60)}"`,
+        )
+        const retry = await modelService.callProviderAPI(
+          provider,
+          apiKey,
+          deepseekService.buildMessages(prompt, language, { languageRetry: true }),
+          // Low temperature: the retry must not rewrite the content, only the language.
+          { ...options, temperature: 0.2 },
+        )
+        const repaired = retry ? parseListing(retry.choices?.[0]?.message?.content) : null
+        if (repaired && (repaired.title || repaired.description)) {
+          listing = repaired
+        }
+        if (deepseekService.hasLanguageDrift(listing, language)) {
+          console.warn('[API] Language retry did not produce the target language')
+        }
+      }
 
       const ks = getKs()
       const complianceResults = await ks.checkCompliance(
-        [parsed.title, ...parsed.bulletPoints, parsed.description].join(' '),
+        [listing.title, ...listing.bulletPoints, listing.description].join(' '),
         platform,
       )
 
       res.json({
         id: 'gen-' + Date.now(),
         productId,
-        title: parsed.title,
-        bulletPoints: parsed.bulletPoints,
-        description: parsed.description,
-        keywords: parsed.keywords,
+        title: listing.title,
+        bulletPoints: listing.bulletPoints,
+        description: listing.description,
+        keywords: listing.keywords,
         seoScore: 85,
         complianceResults,
         platform: platform || 'amazon',
@@ -238,6 +267,95 @@ router.post('/chat-listing', async (req: Request, res: Response) => {
   }
 })
 
+// POST /api/chat-listing/apply - turn one optimisation direction into a full
+// listing patch. Chat replies are prose; "apply" needs structured fields, so
+// this is a separate, deterministic (low-temperature, JSON-only) call.
+// apiKey is passed from frontend per-request, NEVER stored on server.
+router.post('/chat-listing/apply', async (req: Request, res: Response) => {
+  if (!isAdmin(req)) {
+    res.status(403).json({ error: 'Chat is only available for admin users', code: 'ERR_VISITOR_DENIED' })
+    return
+  }
+
+  try {
+    const { direction, suggestion, listing, providerId, apiKey, model, maxTokens } = req.body
+
+    if (!direction || typeof direction !== 'string') {
+      res.status(400).json({ error: 'direction is required', code: 'ERR_MISSING_DIRECTION' })
+      return
+    }
+    if (!listing || typeof listing !== 'object') {
+      res.status(400).json({ error: 'listing is required', code: 'ERR_MISSING_LISTING' })
+      return
+    }
+    if (!apiKey) {
+      res.status(400).json({ error: 'API key is required.', code: 'ERR_NO_API_KEY' })
+      return
+    }
+
+    const current = {
+      title: listing.title || '',
+      bulletPoints: Array.isArray(listing.bulletPoints) ? listing.bulletPoints : [],
+      description: listing.description || '',
+      keywords: Array.isArray(listing.keywords) ? listing.keywords : [],
+    }
+
+    const systemMsg =
+      'You are a senior e-commerce listing editor. Apply one optimisation direction to the current listing and return the complete updated listing.\n\n' +
+      'Rules:\n' +
+      '1. Change only the fields the direction requires; copy every untouched field verbatim.\n' +
+      '2. Keep the original language of the listing unless the direction explicitly asks for another one.\n' +
+      '3. bulletPoints must remain an array of exactly 5 strings; keywords must be an array of 5-10 strings.\n' +
+      '4. Output STRICT JSON only - no markdown fences, no commentary.\n' +
+      'JSON shape: {"title":"...","bulletPoints":["..."],"description":"...","keywords":["..."]}'
+
+    const userMsg =
+      `Current listing:\n${JSON.stringify(current, null, 2)}\n\n` +
+      `Optimisation direction:\n${direction}\n` +
+      (suggestion ? `\nThe assistant proposed these changes (apply them, do not repeat them):\n${suggestion}\n` : '') +
+      '\nReturn the full updated listing as strict JSON.'
+
+    const data = await modelService.callProviderAPI(
+      providerId || 'deepseek',
+      apiKey,
+      [
+        { role: 'system', content: systemMsg },
+        { role: 'user', content: userMsg },
+      ],
+      {
+        model,
+        // Structured rewrite: low temperature keeps untouched fields stable.
+        temperature: 0.3,
+        max_tokens: maxTokens,
+        disableThinking: (providerId || 'deepseek') === 'deepseek',
+      },
+    )
+
+    if (!data) {
+      res.status(502).json({
+        error: 'AI API error. Please check your API key and model configuration.',
+        code: 'ERR_AI_API',
+      })
+      return
+    }
+
+    const text = data.choices?.[0]?.message?.content || ''
+    const parsed = parseFinalJson(text)
+    if (!parsed) {
+      res.status(502).json({
+        error: 'AI did not return a valid listing patch',
+        code: 'ERR_APPLY_PARSE',
+      })
+      return
+    }
+
+    res.json({ patch: normalizeListingFields(parsed) })
+  } catch (error) {
+    console.error('Chat apply error:', error)
+    res.status(500).json({ error: 'Failed to apply the suggestion', code: 'ERR_CHAT_FAILED' })
+  }
+})
+
 // POST /api/check-compliance - Check compliance (RAG enhanced)
 router.post('/check-compliance', async (req: Request, res: Response) => {
   try {
@@ -287,10 +405,7 @@ router.post('/generate-listing/stream', async (req: Request, res: Response) => {
     }
 
     const prompt = await buildGroundedPrompt(productData, platform, template, language)
-
-    const systemMsg = language && language !== 'english'
-      ? `You are a helpful e-commerce listing assistant. Respond in JSON format with: title, bulletPoints (array of 5 strings), description, keywords (array of strings). All content MUST be written in ${language}.`
-      : 'You are a helpful e-commerce listing assistant. Respond in JSON format with: title, bulletPoints (array of 5 strings), description, keywords (array of strings).'
+    const provider = providerId || 'deepseek'
 
     const sse = (obj: unknown) => res.write(`data: ${JSON.stringify(obj)}\n\n`)
 
@@ -299,13 +414,10 @@ router.post('/generate-listing/stream', async (req: Request, res: Response) => {
 
     try {
       for await (const chunk of modelService.callProviderAPIStream(
-        providerId || 'deepseek',
+        provider,
         apiKey,
-        [
-          { role: 'system', content: systemMsg },
-          { role: 'user', content: prompt },
-        ],
-        { model, temperature, max_tokens: maxTokens, disableThinking: (providerId || 'deepseek') === 'deepseek' },
+        deepseekService.buildMessages(prompt, language),
+        { model, temperature, max_tokens: maxTokens, disableThinking: provider === 'deepseek' },
       )) {
         accumulated += chunk
         const fields = extractListingFields(accumulated)
@@ -327,7 +439,39 @@ router.post('/generate-listing/stream', async (req: Request, res: Response) => {
       // Final parse to get complete data
       const parsed = parseFinalJson(accumulated)
       if (parsed) {
-        const norm = normalizeListingFields(parsed)
+        let norm = normalizeListingFields(parsed)
+
+        // The stream already pushed whatever the model wrote to the client, so a
+        // wrong-language answer is repaired with one non-streaming call and the
+        // corrected fields are re-sent before `done` — the client takes `done`
+        // as the final listing, and the corrected values overwrite the partials.
+        if (deepseekService.hasLanguageDrift(norm, language)) {
+          console.warn(
+            `[SSE] Language drift (target=${language || 'english'}) — repairing: "${norm.title.slice(0, 60)}"`,
+          )
+          const retry = await modelService.callProviderAPI(
+            provider,
+            apiKey,
+            deepseekService.buildMessages(prompt, language, { languageRetry: true }),
+            {
+              model,
+              temperature: 0.2,
+              max_tokens: maxTokens,
+              disableThinking: provider === 'deepseek',
+            },
+          )
+          const repaired = retry ? parseListing(retry.choices?.[0]?.message?.content) : null
+          if (repaired && (repaired.title || repaired.description)) {
+            norm = repaired
+            for (const [field, value] of Object.entries(norm)) {
+              sse({ type: 'field', field, value })
+            }
+          }
+          if (deepseekService.hasLanguageDrift(norm, language)) {
+            console.warn('[SSE] Language repair did not produce the target language')
+          }
+        }
+
         const ks = getKs()
         const complianceResults = await ks.checkCompliance(
           [norm.title, ...norm.bulletPoints, norm.description].join(' '),

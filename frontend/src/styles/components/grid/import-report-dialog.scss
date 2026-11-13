@@ -1,0 +1,49 @@
+/* components/grid/ImportReportDialog.vue — component styles. Edit colours and layout here, not in the SFC. */
+
+.import-report {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 4px;
+  padding: 10px 12px;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.import-report__summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.import-report__ok {
+  color: var(--el-color-success);
+}
+
+.import-report__bad {
+  color: var(--el-color-danger);
+}
+
+.import-report__clean {
+  margin: 0;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.import-issue {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  padding: 3px 0;
+  border-top: 1px dashed var(--el-border-color-lighter);
+}
+
+.import-issue__row {
+  flex: 0 0 76px;
+  color: var(--el-color-danger);
+  font-variant-numeric: tabular-nums;
+}
+
+.import-issue__item {
+  color: var(--el-text-color-regular);
+}

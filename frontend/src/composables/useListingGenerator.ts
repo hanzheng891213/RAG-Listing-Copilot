@@ -1,29 +1,16 @@
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { useListingStore } from '@/stores/listingStore'
-import { useSupplierStore } from '@/stores/supplierStore'
-import { useSupplierParser } from '@/composables/useSupplierParser'
 import { PLATFORMS } from '@/utils/constants'
-import type { Platform } from '@/types/listing'
-import type { SupplierProduct } from '@/types/supplier'
 
+/**
+ * Listing-page plumbing that is not tied to a product source.
+ *
+ * The product list itself lives in `useGridProducts` (the 上架表 is the single
+ * source of truth), so nothing here filters or caches upload data any more.
+ */
 export function useListingGenerator() {
   const store = useListingStore()
-  const supplierStore = useSupplierStore()
-  const { getProductLabel } = useSupplierParser()
-  const productSearch = ref('')
   const previewTab = ref<'title' | 'bullets' | 'description'>('bullets')
-
-  const filteredProducts = computed(() => {
-    if (!productSearch.value.trim()) return supplierStore.products
-    const q = productSearch.value.toLowerCase()
-    return supplierStore.products.filter((p) =>
-      Object.values(p.rawData).some((v) => v.toLowerCase().includes(q)),
-    )
-  })
-
-  async function handleGenerate(product: SupplierProduct, language = 'english') {
-    await store.generate(product, language)
-  }
 
   function handleRegenerate() {
     store.regenerate()
@@ -49,12 +36,8 @@ export function useListingGenerator() {
 
   return {
     store,
-    productSearch,
     previewTab,
-    filteredProducts,
     platforms: PLATFORMS,
-    getProductLabel,
-    handleGenerate,
     handleRegenerate,
     handleExport,
     copyToClipboard,

@@ -68,7 +68,7 @@ function getBgColor(): string {
     case 'success':
       return 'var(--accent-glow, rgba(45, 212, 168, 0.15))'
     case 'error':
-      return 'var(--accent-coral-glow, rgba(232, 120, 90, 0.15))'
+      return 'color-mix(in srgb, var(--danger) 12%, transparent)'
     case 'warning':
       return 'rgba(232, 184, 90, 0.12)'
     default:
@@ -105,103 +105,6 @@ onUnmounted(() => {
   </Teleport>
 </template>
 
-<style scoped>
-.upload-toast {
-  position: fixed;
-  top: 24px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 9999;
-  min-width: 380px;
-  max-width: 560px;
-  border: 1px solid;
-  border-radius: var(--radius-md, 10px);
-  backdrop-filter: blur(16px);
-  box-shadow: 0 8px 32px var(--shadow-color, rgba(0, 0, 0, 0.3));
-  overflow: hidden;
-}
-
-.toast-inner {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  padding: 16px 20px;
-}
-
-.toast-icon {
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-
-.toast-body {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.toast-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-primary);
-  line-height: 1.4;
-}
-
-.toast-message {
-  font-size: 13px;
-  color: var(--text-secondary);
-  line-height: 1.5;
-  word-break: break-word;
-}
-
-.toast-close {
-  flex-shrink: 0;
-  width: 28px;
-  height: 28px;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-sm, 6px);
-  margin-top: -2px;
-  transition: color var(--transition-fast, 0.2s);
-}
-
-.toast-close:hover {
-  color: var(--text-primary);
-}
-
-.toast-progress {
-  height: 3px;
-  background: var(--accent, #2dd4a8);
-  animation: toast-shrink var(--dismiss-duration, 5s) linear forwards;
-  opacity: 0.6;
-}
-
-@keyframes toast-shrink {
-  from { width: 100%; }
-  to { width: 0%; }
-}
-
-.toast-slide-enter-active {
-  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.toast-slide-leave-active {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.toast-slide-enter-from {
-  opacity: 0;
-  transform: translateX(-50%) translateY(-12px);
-}
-
-.toast-slide-leave-to {
-  opacity: 0;
-  transform: translateX(-50%) translateY(-12px);
-}
+<style scoped lang="scss">
+@use '../../styles/components/upload/upload-toast.scss' as *;
 </style>

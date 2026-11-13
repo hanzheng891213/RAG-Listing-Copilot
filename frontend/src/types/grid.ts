@@ -16,6 +16,8 @@ export interface GridField {
   key: string
   /** Display label. Extra (uploaded) columns keep their raw header. */
   label: string
+  /** i18n key for core columns; uploaded columns have none and keep `label`. */
+  labelKey?: string
   width: number
   type: GridFieldType
   align?: 'left' | 'right'

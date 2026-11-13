@@ -14,6 +14,10 @@ export const KNOWLEDGE_CATEGORIES = [
 export const FILE_ACCEPT_TYPES = '.csv,.xlsx,.xls,.txt'
 export const FILE_ACCEPT_EXTENSIONS = ['.csv', '.xlsx', '.xls', '.txt']
 
+/** Page sizes offered by the product grid pagination, in display order. */
+export const GRID_PAGE_SIZES = [20, 50, 100, 200, 500] as const
+export const GRID_DEFAULT_PAGE_SIZE = 100
+
 /** Listing generation target languages */
 export const LISTING_LANGUAGES = [
   { value: 'english', label: 'listing.languages.english' },

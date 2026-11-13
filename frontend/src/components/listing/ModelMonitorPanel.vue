@@ -71,58 +71,6 @@ onMounted(() => {
   </div>
 </template>
 
-<style scoped>
-.model-monitor {
-  margin-bottom: 12px;
-  padding: 12px 14px;
-  background: var(--bg-secondary);
-  border-radius: var(--radius-md);
-  font-size: 13px;
-}
-.monitor-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-.monitor-title {
-  font-weight: 500;
-  color: var(--text-primary);
-}
-.status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-.status-dot.active { background: #22c55e; }
-.status-dot.inactive { background: #9ca3af; }
-.monitor-body {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.monitor-row {
-  display: flex;
-  justify-content: space-between;
-}
-.monitor-row .label { color: var(--text-muted); }
-.monitor-row .value { color: var(--text-primary); font-family: monospace; font-size: 12px; }
-.monitor-row .key-masked { color: var(--text-muted); font-size: 11px; }
-.form-group {
-  margin-bottom: 4px;
-}
-.form-group label {
-  display: block;
-  font-size: 11px;
-  color: var(--text-secondary);
-  margin-bottom: 3px;
-}
-.monitor-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  color: var(--text-muted);
-  font-size: 12px;
-}
+<style scoped lang="scss">
+@use '../../styles/components/listing/model-monitor-panel.scss' as *;
 </style>

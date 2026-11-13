@@ -1,5 +1,6 @@
 import type { SupplierProduct, GeneratedListing, Platform, ComplianceResult, KnowledgeContext } from '../../types/index.ts'
 import { ragService } from '../rag/ragService.ts'
+import { isLanguageDrift, resolveListingLanguage } from '../../utils/listingLanguage.ts'
 import { v4 as uuid } from 'uuid'
 
 const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1'
@@ -26,7 +27,7 @@ export class DeepSeekService {
 
     if (key) {
       console.log('[DeepSeek] Using real API for generation')
-      return this.callDeepSeekAPI(prompt, product, platform, template, key)
+      return this.callDeepSeekAPI(prompt, product, platform, template, key, language)
     }
 
     console.log('[DeepSeek] No API key configured, using demo mode')
@@ -60,6 +61,48 @@ export class DeepSeekService {
     return this.buildPrompt(product, platform, template || 'standard', docs, language, knowledge)
   }
 
+  /**
+   * System message for listing generation.
+   *
+   * The output language lives here as well as at the end of the user prompt:
+   * providers weight the system message heavily, and the English case used to
+   * carry no language instruction at all.
+   */
+  buildSystemMessage(language?: string): string {
+    const target = resolveListingLanguage(language)
+    const strictness = target === 'English'
+      ? ' — even when the source product data or the retrieved rules are in Chinese'
+      : ''
+    return `You are a helpful e-commerce listing assistant. Respond in JSON format with: title, bulletPoints (array of 5 strings), description (markdown string), keywords (array of 5-10 strings).\n\nOutput language: ${target}. Every field must be written in ${target}${strictness}. Never mirror the source data's language.`
+  }
+
+  /**
+   * The messages for one generation call.
+   *
+   * `languageRetry` is used for the single second attempt made when the answer
+   * came back in the wrong language: the rejection is stated explicitly and the
+   * note goes last in the user message, where instruction-following is strongest.
+   */
+  buildMessages(
+    prompt: string,
+    language?: string,
+    options?: { languageRetry?: boolean },
+  ): Array<{ role: 'system' | 'user'; content: string }> {
+    const target = resolveListingLanguage(language)
+    const retryNote = options?.languageRetry
+      ? `\n\nYour previous answer was rejected: it was not written in ${target}. Rewrite the entire listing in ${target}; no other language may appear in any field.`
+      : ''
+    return [
+      { role: 'system', content: this.buildSystemMessage(language) },
+      { role: 'user', content: `${prompt}${retryNote}` },
+    ]
+  }
+
+  /** True when the generated listing came back in the wrong language. */
+  hasLanguageDrift(listing: { title?: string; description?: string }, language?: string): boolean {
+    return isLanguageDrift(listing, language)
+  }
+
   private buildPrompt(
     product: SupplierProduct,
     platform: Platform,
@@ -68,9 +111,15 @@ export class DeepSeekService {
     language?: string,
     knowledge?: KnowledgeContext,
   ): string {
-    const langInstruction = language && language !== 'english'
-      ? `\n\nIMPORTANT: All generated content (title, bullet points, description, keywords) MUST be written entirely in ${language}. Do not use English.`
-      : ''
+    const target = resolveListingLanguage(language)
+    // English is the default target and must be stated too: this branch used to
+    // be empty for English, leaving the model to follow the Chinese product
+    // data (or the Chinese rule body injected by retrieval) instead.
+    const langInstruction =
+      `\nOutput language: ${target}. Write the title, all five bullet points, the description and the keywords entirely in ${target}.`
+      + (target === 'English'
+        ? ' The raw product data and the retrieved rules may be in Chinese or another language: translate them into English rather than answering in their language, and leave no CJK characters in the output.'
+        : ' Translate any raw data that is in another language; do not mix languages in one listing.')
 
     // The retrieved regulations and the built-in list are both included: the
     // built-in red lines are short, and they must survive even when retrieval
@@ -114,7 +163,9 @@ Respond in JSON format:
   "bulletPoints": ["...", "..."],
   "description": "...",
   "keywords": ["..."]
-}`
+}
+
+Reminder: every string in that JSON must be written in ${target}.`
   }
 
   private async callDeepSeekAPI(
@@ -123,6 +174,7 @@ Respond in JSON format:
     platform: Platform,
     template: string,
     apiKey: string,
+    language?: string,
   ): Promise<GeneratedListing> {
     const response = await fetch(`${DEEPSEEK_BASE_URL}/chat/completions`, {
       method: 'POST',
@@ -132,10 +184,7 @@ Respond in JSON format:
       },
       body: JSON.stringify({
         model: 'deepseek-chat',
-        messages: [
-          { role: 'system', content: 'You are a helpful e-commerce listing assistant.' },
-          { role: 'user', content: prompt },
-        ],
+        messages: this.buildMessages(prompt, language),
         temperature: 0.7,
         max_tokens: 2000,
       }),

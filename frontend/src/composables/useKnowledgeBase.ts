@@ -21,7 +21,7 @@ export function useKnowledgeBase() {
       try {
         // 种子文档 ID 与服务端不一致，用标题匹配。
         // doc.title 在当前语言下可能是中文，故两种标题都要比对。
-        const res = await listDocuments()
+        const res = (await listDocuments()) as unknown as { documents?: any[] }
         const match = res.documents?.find(
           (d: any) => d.title === doc.title || d.titleZh === doc.title,
         )
@@ -64,6 +64,7 @@ export function useKnowledgeBase() {
     uploadDialogVisible,
     selectedDoc,
     detailVisible,
+    contentLoading,
     viewDocument,
     formatDocDate,
     getCategoryLabel,

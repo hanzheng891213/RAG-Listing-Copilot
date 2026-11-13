@@ -1,0 +1,77 @@
+/* components/grid/GridLayoutPanel.vue — component styles. Edit colours and layout here, not in the SFC. */
+
+.layout-hint {
+  margin-bottom: 12px;
+}
+
+.layout-section {
+  margin-bottom: 16px;
+}
+
+.layout-section__title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.layout-section__meta {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--el-text-color-secondary);
+}
+
+.layout-list {
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+
+.layout-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  border-bottom: 1px dashed var(--el-border-color-lighter);
+}
+
+.layout-row:last-child {
+  border-bottom: none;
+}
+
+.layout-row__label {
+  flex: 1;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.layout-row__label.is-hidden {
+  color: var(--el-text-color-disabled);
+  text-decoration: line-through;
+}
+
+.layout-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
+.layout-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.layout-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}

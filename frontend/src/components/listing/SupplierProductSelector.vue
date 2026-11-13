@@ -1,274 +1,277 @@
 <script setup lang="ts">
-import { ref, inject, onMounted, onUnmounted } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useListingGenerator } from '@/composables/useListingGenerator'
 import { useVirtualList } from '@/composables/useVirtualList'
-import { useSupplierStore } from '@/stores/supplierStore'
+import LanguageRadialMenu from '@/components/listing/LanguageRadialMenu.vue'
 import { LISTING_LANGUAGES } from '@/utils/constants'
-import type { SupplierProduct } from '@/types/supplier'
+import { hasGeneratedListing } from '@/utils/gridFields'
+import type { Platform } from '@/types/listing'
+import type { GridProduct } from '@/composables/useGridProducts'
 
-const emit = defineEmits<{ generate: [product: SupplierProduct, language: string] }>()
+/**
+ * Product picker for the 上架表 rows.
+ *
+ * Rows come from the table (not from an upload store): the same SKU shown in the
+ * table can be generated here, singly or as a batch, and the result is written
+ * back to that row. Generated rows are painted deep green, pending rows pale
+ * green, so the remaining batch is visible at a glance.
+ */
+const props = defineProps<{
+  products: GridProduct[]
+  loading: boolean
+  selectedIds: string[]
+  generatingIds: string[]
+  platform: Platform
+  batchActive?: boolean
+  batchPaused?: boolean
+}>()
+
+const emit = defineEmits<{
+  (e: 'generate', payload: { product: GridProduct; language: string }): void
+  (e: 'batch-generate', payload: { products: GridProduct[]; language: string }): void
+  (e: 'pause-batch'): void
+  (e: 'resume-batch'): void
+  (e: 'cancel-batch'): void
+  (e: 'toggle', id: string): void
+  (e: 'toggle-all', checked: boolean): void
+  (e: 'detail', product: GridProduct): void
+  (e: 'reload'): void
+}>()
+
 const { t } = useI18n()
-const { productSearch, filteredProducts, getProductLabel } = useListingGenerator()
-const { containerRef, onScroll, visibleItems, totalHeight, offsetY } = useVirtualList(filteredProducts)
-const supplierStore = useSupplierStore()
 
-const openProductId = ref<string | null>(null)
-const rootRef = ref<HTMLElement | null>(null)
+const search = ref('')
+const batchLanguage = ref<string>('english')
+const ring = ref({ open: false, productId: '', x: 0, y: 0 })
 
-// 从 AppLayout 注入商品详情展开函数
-const showProductDetail = inject<(product: SupplierProduct | null) => void>('showProductDetail')
-
-function toggleMenu(productId: string) {
-  openProductId.value = openProductId.value === productId ? null : productId
-}
-
-function selectLanguage(product: SupplierProduct, language: string) {
-  openProductId.value = null
-  emit('generate', product, language)
-}
-
-function onClickOutside(e: MouseEvent) {
-  if (!openProductId.value) return
-  if (rootRef.value && !rootRef.value.contains(e.target as Node)) {
-    openProductId.value = null
-  }
-}
-
-onMounted(() => document.addEventListener('click', onClickOutside))
-onUnmounted(() => document.removeEventListener('click', onClickOutside))
-
-function firstRawValue(product: SupplierProduct, excludeKeys: string[] = []): string {
-  const entries = Object.entries(product.rawData)
-  for (const [k, v] of entries) {
-    if (!excludeKeys.includes(k) && v) return v
-  }
-  return ''
-}
-
-// Pre-compute radial positions: 12 items fanned in a 160° arc pointing upward-left
-const RADIUS = 100
-const ARC_START = -168
-const ARC_END = -12
-const ITEM_COUNT = LISTING_LANGUAGES.length
-const STEP = (ARC_END - ARC_START) / (ITEM_COUNT - 1)
-
-const radialItems = LISTING_LANGUAGES.map((lang, i) => {
-  const angle = ARC_START + i * STEP
-  return {
-    ...lang,
-    angle,
-    style: {
-      transform: `rotate(${angle}deg) translateY(-${RADIUS}px) rotate(${-angle}deg)`,
-      animationDelay: `${i * 25}ms`,
-    },
-  }
+const filtered = computed(() => {
+  const q = search.value.trim().toLowerCase()
+  if (!q) return props.products
+  return props.products.filter((product) =>
+    Object.values(product.rawData).some((value) => (value ?? '').toLowerCase().includes(q)),
+  )
 })
+
+// 74 = item height (66) + row gap (8). Keep the CSS in sync with this number.
+const { containerRef, onScroll, visibleItems, totalHeight, offsetY, scrollToTop } =
+  useVirtualList(filtered, { itemHeight: 74 })
+
+// A filtered list starts at the top: keeping the old offset would open the
+// results halfway down and look like rows are missing.
+watch(search, () => scrollToTop())
+
+const allChecked = computed(() => {
+  const selectable = filtered.value.filter((product) => product.editable)
+  return selectable.length > 0 && selectable.every((product) => props.selectedIds.includes(product.id))
+})
+
+const selectedProducts = computed(() =>
+  props.products.filter((product) => product.editable && props.selectedIds.includes(product.id)),
+)
+
+const busy = computed(
+  () => props.generatingIds.length > 0 || props.loading || Boolean(props.batchActive),
+)
+const generatedCount = computed(
+  () => props.products.filter((product) => hasGeneratedListing(product.fields)).length,
+)
+const ungeneratedCount = computed(() => props.products.length - generatedCount.value)
+
+function labelOf(product: GridProduct): string {
+  return (
+    product.fields.productName ||
+    product.fields.title ||
+    product.fields.sku ||
+    `Product ${product.id.slice(0, 6)}`
+  )
+}
+
+function metaOf(product: GridProduct): string {
+  return [product.fields.sku, product.fields.category, product.fields.price]
+    .filter((value) => Boolean(value && value.trim()))
+    .join(' · ')
+}
+
+function isGenerating(product: GridProduct): boolean {
+  return props.generatingIds.includes(product.id)
+}
+
+function isGenerated(product: GridProduct): boolean {
+  return hasGeneratedListing(product.fields)
+}
+
+function openRing(product: GridProduct, event: MouseEvent): void {
+  const target = event.currentTarget as HTMLElement | null
+  const rect = target?.getBoundingClientRect()
+  ring.value = {
+    open: true,
+    productId: product.id,
+    x: rect ? rect.right - 4 : window.innerWidth / 2,
+    y: rect ? rect.top + rect.height / 2 : window.innerHeight / 2,
+  }
+}
+
+function onRingSelect(language: string): void {
+  const product = props.products.find((item) => item.id === ring.value.productId)
+  ring.value.open = false
+  if (product) emit('generate', { product, language })
+}
+
+function onBatch(): void {
+  if (selectedProducts.value.length === 0) return
+  emit('batch-generate', {
+    products: selectedProducts.value,
+    language: batchLanguage.value,
+  })
+}
 </script>
 
 <template>
-  <div ref="rootRef" class="product-selector">
-    <h3 class="panel-title">{{ t('listing.selectProduct') }}</h3>
+  <div class="product-selector">
+    <div class="selector-head">
+      <h3 class="panel-title">{{ t('listing.selectProduct') }}</h3>
+      <span class="selector-count">{{ t('listing.fromTable', { count: products.length }) }}</span>
+    </div>
 
-    <div v-if="!supplierStore.hasProducts" class="no-products">
+    <div v-if="products.length" class="selector-legend">
+      <span class="legend-item">
+        <i class="legend-dot is-idle" />
+        {{ t('listing.legendUngenerated', { count: ungeneratedCount }) }}
+      </span>
+      <span class="legend-item">
+        <i class="legend-dot is-done" />
+        {{ t('listing.legendGenerated', { count: generatedCount }) }}
+      </span>
+    </div>
+
+    <div v-if="!products.length && !loading" class="no-products">
       <el-icon><Warning /></el-icon>
-      <p>{{ t('listing.uploadFirst') }}</p>
-      <el-button size="small" @click="$router.push('/supplier-upload')">{{ t('common.upload') }}</el-button>
+      <p>{{ t('listing.tableEmpty') }}</p>
+      <el-button size="small" @click="$router.push('/product-grid')">{{ t('listing.goToTable') }}</el-button>
     </div>
 
     <template v-else>
-      <el-input v-model="productSearch" :placeholder="t('listing.searchProduct')" size="small" clearable>
+      <div class="batch-bar">
+        <el-checkbox
+          :model-value="allChecked"
+          :indeterminate="selectedIds.length > 0 && !allChecked"
+          :disabled="busy"
+          size="small"
+          @update:model-value="(value: any) => emit('toggle-all', Boolean(value))"
+        >
+          {{ t('listing.selectAllCount', { count: selectedIds.length }) }}
+        </el-checkbox>
+        <div class="batch-actions">
+          <el-select v-model="batchLanguage" size="small" class="batch-lang" :disabled="busy">
+            <el-option
+              v-for="lang in LISTING_LANGUAGES"
+              :key="lang.value"
+              :label="t(lang.label)"
+              :value="lang.value"
+            />
+          </el-select>
+
+          <template v-if="batchActive">
+            <el-button
+              v-if="!batchPaused"
+              size="small"
+              @click="emit('pause-batch')"
+            >
+              <el-icon><VideoPause /></el-icon>
+              {{ t('listing.batchPause') }}
+            </el-button>
+            <el-button v-else size="small" type="primary" @click="emit('resume-batch')">
+              <el-icon><VideoPlay /></el-icon>
+              {{ t('listing.batchResume') }}
+            </el-button>
+            <el-button size="small" text @click="emit('cancel-batch')">
+              {{ t('listing.batchCancel') }}
+            </el-button>
+          </template>
+
+          <el-button
+            v-else
+            size="small"
+            type="primary"
+            :loading="loading"
+            :disabled="selectedIds.length === 0 || busy"
+            @click="onBatch"
+          >
+            {{ t('listing.batchGenerate') }}
+          </el-button>
+        </div>
+      </div>
+
+      <el-input v-model="search" :placeholder="t('listing.searchProduct')" size="small" clearable>
         <template #prefix><el-icon><Search /></el-icon></template>
       </el-input>
 
       <div ref="containerRef" class="product-list" @scroll="onScroll">
         <div class="vl-spacer" :style="{ height: totalHeight + 'px' }">
           <div class="vl-window" :style="{ transform: `translateY(${offsetY}px)` }">
-            <div v-for="product in visibleItems" :key="product.id" class="product-item">
+            <div
+              v-for="product in visibleItems"
+              :key="product.id"
+              class="product-item"
+              :class="{
+                'is-generating': isGenerating(product),
+                'is-generated': isGenerated(product),
+                'is-ungenerated': !isGenerated(product),
+                'is-readonly': !product.editable,
+              }"
+              v-tooltip="product.editable ? '' : t('listing.readOnlyRow')"
+            >
+              <el-checkbox
+                :model-value="selectedIds.includes(product.id)"
+                :disabled="busy || !product.editable"
+                class="item-check"
+                @update:model-value="() => emit('toggle', product.id)"
+              />
+
               <div class="product-info">
-                <span class="product-title">{{ getProductLabel(product) }}</span>
-                <span class="product-meta">{{ firstRawValue(product, [Object.keys(product.rawData)[0]]) }}</span>
+                <span class="product-title-row">
+                  <span class="product-title">{{ labelOf(product) }}</span>
+                  <el-icon v-if="isGenerated(product)" class="product-done-icon"><CircleCheckFilled /></el-icon>
+                </span>
+                <span class="product-meta">{{ metaOf(product) || t('listing.noMeta') }}</span>
               </div>
 
-              <div class="btn-zone">
-                <div class="btn-row">
-                  <button
-                    class="gen-btn"
-                    :class="{ active: openProductId === product.id }"
-                    @click.stop="toggleMenu(product.id)"
-                  >
-                    <span v-if="openProductId !== product.id">{{ t('listing.generate') }}</span>
-                    <span v-else class="gen-btn-close">&times;</span>
-                  </button>
+              <div class="btn-row">
+                <button
+                  class="gen-btn"
+                  :class="{ active: ring.open && ring.productId === product.id }"
+                  :disabled="busy || isGenerating(product) || !product.editable"
+                  v-tooltip="product.editable ? t('listing.generate') : t('listing.readOnlyRow')"
+                  @click.stop="openRing(product, $event)"
+                >
+                  <span v-if="isGenerating(product)" class="gen-spinner" />
+                  <span v-else-if="ring.open && ring.productId === product.id" class="gen-btn-close">&times;</span>
+                  <span v-else>{{ t('listing.generate') }}</span>
+                </button>
 
-                  <button class="detail-btn" title="View Details" @click.stop="showProductDetail?.(product)">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>
-                    </svg>
-                  </button>
-                </div>
-
-                <Transition name="radial">
-                  <div v-if="openProductId === product.id" class="radial-menu" @click.stop>
-                    <div
-                      v-for="item in radialItems"
-                      :key="item.value"
-                      class="radial-item"
-                      :style="item.style"
-                      @click="selectLanguage(product, item.value)"
-                      :title="t(item.label)"
-                    >
-                      <span class="radial-code">{{ item.value.slice(0, 2) }}</span>
-                    </div>
-                  </div>
-                </Transition>
+                <button class="detail-btn" v-tooltip="t('listing.details')" @click.stop="emit('detail', product)">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="1" /><circle cx="12" cy="5" r="1" /><circle cx="12" cy="19" r="1" />
+                  </svg>
+                </button>
               </div>
             </div>
           </div>
         </div>
-        <div v-if="filteredProducts.length === 0" class="no-results">{{ t('supplier.noProducts') }}</div>
+        <div v-if="filtered.length === 0" class="no-results">{{ t('supplier.noProducts') }}</div>
       </div>
     </template>
+
+    <LanguageRadialMenu
+      :open="ring.open"
+      :x="ring.x"
+      :y="ring.y"
+      @select="onRingSelect"
+      @close="ring.open = false"
+    />
   </div>
 </template>
 
-<style scoped>
-.product-selector { display: flex; flex-direction: column; gap: 16px; width: 100%; height: 100%; }
-.panel-title { font-family: var(--font-body); font-size: 15px; font-weight: 600; color: var(--text-primary); flex-shrink: 0; }
-.no-products { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 32px 16px; text-align: center; color: var(--text-muted); font-size: 13px; }
-.product-list { position: relative; flex: 1; min-height: 0; overflow-y: auto; width: 100%; }
-.vl-spacer { position: relative; width: 100%; }
-.vl-window { position: absolute; top: 0; left: 0; right: 0; display: flex; flex-direction: column; gap: 8px; }
-.product-item { display: flex; align-items: center; justify-content: space-between; height: 66px; box-sizing: border-box; padding: 12px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-md); gap: 12px; transition: all var(--transition-fast); position: relative; width: 100%; }
-.product-item:hover { border-color: var(--accent-dim); background: var(--bg-card-hover); }
-.product-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
-.product-title { font-size: 13px; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.product-meta { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.no-results { text-align: center; padding: 24px; color: var(--text-muted); font-size: 13px; }
-
-/* ---- Button zone ---- */
-.btn-zone {
-  position: relative;
-  flex-shrink: 0;
-}
-
-.btn-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-/* ---- Generate button ---- */
-.gen-btn {
-  position: relative;
-  z-index: 2;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 72px;
-  height: 28px;
-  padding: 0 12px;
-  border: 1px solid var(--accent);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--accent);
-  font-size: 12px;
-  font-family: var(--font-body);
-  cursor: pointer;
-  transition: all 0.25s ease;
-  white-space: nowrap;
-}
-.gen-btn:hover {
-  background: var(--accent);
-  color: #e6f8f8;
-  box-shadow: 0 0 0 4px rgba(99, 232, 241, 0.15);
-}
-.gen-btn.active {
-  background: var(--accent);
-  color: #d9f4f7;
-}
-.gen-btn-close {
-  font-size: 18px;
-  line-height: 1;
-}
-
-/* ---- Detail button ---- */
-.detail-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border: none;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-.detail-btn:hover {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-}
-
-/* ---- Radial menu ---- */
-.radial-menu {
-  position: absolute;
-  top: 50%;
-  right: 10px;
-  width: 0;
-  height: 0;
-  z-index: 10;
-  pointer-events: none;
-}
-
-.radial-item {
-  position: absolute;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: var(--bg-card);
-  border: 1.5px solid var(--accent-dim);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  pointer-events: auto;
-  transition: all 0.2s ease;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-  animation: radial-enter 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both;
-}
-.radial-item:hover {
-  background: var(--accent);
-  border-color: var(--accent);
-  border-width: 2px;
-  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.2), 0 4px 16px rgba(0, 0, 0, 0.25);
-}
-.radial-code {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--text-primary);
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-  transition: color 0.2s;
-}
-.radial-item:hover .radial-code {
-  color: #fff;
-}
-
-/* Staggered entry animation */
-@keyframes radial-enter {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-/* Transition wrapper for enter/leave */
-.radial-enter-active { transition: opacity 0.2s ease; }
-.radial-leave-active { transition: opacity 0.15s ease; }
-.radial-enter-from,
-.radial-leave-to { opacity: 0; }
+<style scoped lang="scss">
+@use '../../styles/components/listing/supplier-product-selector.scss' as *;
 </style>

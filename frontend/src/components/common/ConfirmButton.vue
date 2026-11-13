@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { ElMessageBox } from 'element-plus'
-import type { ButtonType, ButtonSize } from 'element-plus'
+import type { ButtonType } from 'element-plus'
+
+/** element-plus no longer exports ButtonSize as a type. */
+type ButtonSize = 'large' | 'default' | 'small'
 
 const props = withDefaults(defineProps<{
   confirmTitle?: string

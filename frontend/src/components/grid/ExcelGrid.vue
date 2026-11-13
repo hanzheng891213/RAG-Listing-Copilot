@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { Delete, MagicStick, Select } from '@element-plus/icons-vue'
 import type { GridField, GridRow, GridLayout, GridSelection } from '@/types/grid'
 import { normaliseCell } from '@/utils/tsv'
 
@@ -20,8 +22,15 @@ import { normaliseCell } from '@/utils/tsv'
 const ROW_HEIGHT = 30
 const HEADER_HEIGHT = 32
 const ROW_NUMBER_WIDTH = 56
+/** Three colour-coded icon buttons plus their gaps and the rail padding. */
+const ACTION_BUTTON_SIZE = 24
+const ACTION_GAP = 6
+const ACTION_PADDING = 12
+const ACTION_WIDTH = ACTION_BUTTON_SIZE * 3 + ACTION_GAP * 2 + ACTION_PADDING
 const OVERSCAN = 6
 const MIN_THUMB = 28
+
+const { t } = useI18n()
 
 const props = defineProps<{
   rows: GridRow[]
@@ -36,6 +45,12 @@ const props = defineProps<{
   cellErrors: Record<string, string>
   saving: boolean
   draftStart: number
+  /** Always-frozen 操作 column pinned at the far right. */
+  actions?: boolean
+  /** Labels for the action column; the page passes translated text. */
+  actionLabels?: { header: string; save: string; generate: string; delete: string }
+  /** Rows whose listing is being generated; the action cell shows a spinner. */
+  generatingIds?: string[]
 }>()
 
 const emit = defineEmits<{
@@ -44,6 +59,8 @@ const emit = defineEmits<{
   (e: 'select-row', payload: { rowId: string; extend: boolean }): void
   (e: 'request-save-row', id: string): void
   (e: 'activate', payload: { rowId: string; field: string }): void
+  (e: 'row-generate', payload: { rowId: string; x: number; y: number }): void
+  (e: 'row-delete', payload: { rowId: string }): void
 }>()
 
 interface ColumnLayout {
@@ -74,6 +91,21 @@ function setEditorRef(el: unknown): void {
 // ── Column geometry ──────────────────────────────────────────────────
 // Row-number column takes the first sticky slot; data columns are frozen from
 // the counted visible fields, so hidden columns never shift the freeze point.
+// The action column owns the rightmost slot for the same reason.
+const actionLabels = computed(
+  () =>
+    props.actionLabels ?? {
+      header: t('grid.actionsHeader'),
+      save: t('grid.saveAction'),
+      generate: t('grid.generateAction'),
+      delete: t('grid.deleteAction'),
+    },
+)
+
+// The rail is icon-only (save / generate / delete), so its width is fixed and
+// the translated labels live in the themed tooltips instead of the button text.
+const ACTION_SLOT = computed(() => (props.actions ? ACTION_WIDTH : 0))
+
 const columns = computed<ColumnLayout[]>(() => {
   const out: ColumnLayout[] = []
   let offset = props.layout.showRowNumber ? ROW_NUMBER_WIDTH : 0
@@ -88,7 +120,7 @@ const columns = computed<ColumnLayout[]>(() => {
     offset += field.width
   })
 
-  let right = 0
+  let right = ACTION_SLOT.value
   const from = props.fields.length - props.layout.fixedRight
   for (let index = props.fields.length - 1; index >= from && index >= 0; index--) {
     out[index].stickyRight = right
@@ -101,7 +133,8 @@ const columns = computed<ColumnLayout[]>(() => {
 const totalWidth = computed(
   () =>
     (props.layout.showRowNumber ? ROW_NUMBER_WIDTH : 0) +
-    props.fields.reduce((sum, field) => sum + field.width, 0),
+    props.fields.reduce((sum, field) => sum + field.width, 0) +
+    ACTION_SLOT.value,
 )
 
 // ── Virtual window ───────────────────────────────────────────────────
@@ -539,8 +572,33 @@ function isRowSaving(rowId: string): boolean {
   return props.savingIds.includes(rowId)
 }
 
+function isGenerating(rowId: string): boolean {
+  return (props.generatingIds ?? []).includes(rowId)
+}
+
+/** Anchors the language fan at the clicked button, opening to the left. */
+function onActionGenerate(rowId: string, event: MouseEvent): void {
+  const target = event.currentTarget as HTMLElement | null
+  const rect = target?.getBoundingClientRect()
+  emit('row-generate', {
+    rowId,
+    x: rect ? rect.right - 4 : window.innerWidth / 2,
+    y: rect ? rect.top + rect.height / 2 : window.innerHeight / 2,
+  })
+}
+
+function onActionDelete(rowId: string, event: MouseEvent): void {
+  event.stopPropagation()
+  emit('row-delete', { rowId })
+}
+
 function valueOf(row: GridRow, field: GridField): string {
   return row.fields[field.key] ?? ''
+}
+
+/** Core columns carry an i18n key; uploaded columns keep their raw header. */
+function fieldLabel(field: GridField): string {
+  return field.labelKey ? t(field.labelKey) : field.label
 }
 
 /** Exposed so the page can flush an open editor before saving or paging. */
@@ -587,22 +645,34 @@ onBeforeUnmount(() => {
             v-if="layout.showRowNumber"
             class="xhead xhead--rownum"
             :style="{ width: `${ROW_NUMBER_WIDTH}px`, left: '0px' }"
+            v-tooltip="t('grid.rowNumber')"
           >
-            #
+            {{ t('grid.serialNumber') }}
           </div>
           <div
             v-for="col in columns"
             :key="col.field.key"
             class="xhead"
-            :class="{ 'xhead--frozen': col.stickyLeft !== null || col.stickyRight !== null }"
+            :class="{
+              'xhead--frozen': col.stickyLeft !== null || col.stickyRight !== null,
+              'xhead--frozen-right': col.stickyRight !== null,
+            }"
             :style="{
               width: `${col.field.width}px`,
               left: col.stickyLeft !== null ? `${col.stickyLeft}px` : undefined,
               right: col.stickyRight !== null ? `${col.stickyRight}px` : undefined,
             }"
-            :title="col.field.label"
+            v-tooltip="fieldLabel(col.field)"
           >
-            {{ col.field.label }}
+            {{ fieldLabel(col.field) }}
+          </div>
+
+          <div
+            v-if="actions"
+            class="xhead xhead--actions"
+            :style="{ width: `${ACTION_WIDTH}px`, right: '0px' }"
+          >
+            {{ actionLabels.header }}
           </div>
         </div>
 
@@ -632,16 +702,6 @@ onBeforeUnmount(() => {
           >
             <span v-if="entry.index < draftStart">{{ entry.index + 1 }}</span>
             <span v-else class="xcell__draft-mark">+</span>
-            <button
-              v-if="entry.index < draftStart && canEdit(entry.row) && !saving"
-              class="xcell__row-save"
-              type="button"
-              title="保存该行"
-              @pointerdown.stop
-              @click.stop="emit('request-save-row', entry.row.id)"
-            >
-              ✓
-            </button>
           </div>
 
           <div
@@ -650,6 +710,7 @@ onBeforeUnmount(() => {
             class="xcell"
             :class="{
               'xcell--frozen': col.stickyLeft !== null || col.stickyRight !== null,
+              'xcell--frozen-right': col.stickyRight !== null,
               'xcell--selected': isSelected(entry.row.id, col.field.key),
               'xcell--error': cellError(entry.row.id, col.field.key),
               'xcell--numeric': col.field.align === 'right',
@@ -662,7 +723,7 @@ onBeforeUnmount(() => {
               left: col.stickyLeft !== null ? `${col.stickyLeft}px` : undefined,
               right: col.stickyRight !== null ? `${col.stickyRight}px` : undefined,
             }"
-            :title="cellError(entry.row.id, col.field.key) || valueOf(entry.row, col.field)"
+            v-tooltip="cellError(entry.row.id, col.field.key) || valueOf(entry.row, col.field)"
             @pointerdown="onCellPointerDown(entry.row.id, col.field.key, $event)"
             @dblclick="onCellDblClick(entry.row, col.field)"
           >
@@ -677,6 +738,47 @@ onBeforeUnmount(() => {
             />
             <span v-else class="xcell__text">{{ valueOf(entry.row, col.field) }}</span>
             <span v-if="isRowSaving(entry.row.id)" class="xcell__spinner" />
+          </div>
+
+          <div
+            v-if="actions"
+            class="xcell xcell--actions"
+            :style="{ width: `${ACTION_WIDTH}px`, right: '0px' }"
+            @pointerdown.stop
+            @dblclick.stop
+          >
+            <button
+              type="button"
+              class="xact xact--save"
+              :disabled="saving || !canEdit(entry.row) || isRowSaving(entry.row.id) || entry.index >= draftStart"
+              :aria-label="actionLabels.save"
+              v-tooltip="actionLabels.save"
+              @click.stop="emit('request-save-row', entry.row.id)"
+            >
+              <span v-if="isRowSaving(entry.row.id)" class="xact__spinner" />
+              <el-icon v-else><Select /></el-icon>
+            </button>
+            <button
+              type="button"
+              class="xact xact--generate"
+              :disabled="saving || !canEdit(entry.row) || isGenerating(entry.row.id) || entry.index >= draftStart"
+              :aria-label="actionLabels.generate"
+              v-tooltip="actionLabels.generate"
+              @click.stop="onActionGenerate(entry.row.id, $event)"
+            >
+              <span v-if="isGenerating(entry.row.id)" class="xact__spinner" />
+              <el-icon v-else><MagicStick /></el-icon>
+            </button>
+            <button
+              type="button"
+              class="xact xact--delete"
+              :disabled="saving || !canEdit(entry.row) || entry.index >= draftStart"
+              :aria-label="actionLabels.delete"
+              v-tooltip="actionLabels.delete"
+              @click.stop="onActionDelete(entry.row.id, $event)"
+            >
+              <el-icon><Delete /></el-icon>
+            </button>
           </div>
         </div>
 
@@ -719,458 +821,6 @@ onBeforeUnmount(() => {
   </div>
 </template>
 
-<style scoped>
-.xgrid {
-  position: relative;
-  width: 100%;
-  border: 1px solid var(--el-border-color);
-  border-radius: 6px;
-  overflow: hidden;
-  background: var(--el-bg-color);
-  user-select: none;
-}
-
-.xgrid__viewport {
-  position: absolute;
-  inset: 0 10px 10px 0;
-  overflow: auto;
-  /* The external tracks are the visible scrollbars; the native ones must not
-     compete with them or two drivers end up fighting over scrollTop. */
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.xgrid__viewport::-webkit-scrollbar {
-  display: none;
-}
-
-.xgrid__canvas {
-  position: relative;
-  min-width: 100%;
-}
-
-.xgrid__head {
-  position: sticky;
-  top: 0;
-  z-index: 4;
-  display: flex;
-  background: var(--el-fill-color-light);
-  border-bottom: 1px solid var(--el-border-color);
-  box-sizing: border-box;
-}
-
-.xhead {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  padding: 0 8px;
-  height: 100%;
-  box-sizing: border-box;
-  border-right: 1px solid var(--el-border-color-lighter);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--el-text-color-regular);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  background: var(--el-fill-color-light);
-}
-
-.xhead--rownum,
-.xcell--rownum {
-  justify-content: center;
-  padding: 0;
-  color: var(--el-text-color-secondary);
-  font-variant-numeric: tabular-nums;
-}
-
-/* The row-number column is the first frozen slot. Without sticky here it
-   scrolls away and the frozen data columns keep a 56px gap in front of them. */
-.xhead--rownum {
-  position: sticky;
-  left: 0;
-  z-index: 6;
-}
-
-.xcell--rownum {
-  position: sticky;
-  left: 0;
-  z-index: 2;
-}
-
-/* Both axes on one element: vertical for the header, horizontal for freeze. */
-.xhead--frozen {
-  position: sticky;
-  z-index: 5;
-}
-
-.xgrid__row {
-  display: flex;
-  box-sizing: border-box;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  background: var(--el-bg-color);
-}
-
-.xgrid__row--alt {
-  background: var(--el-fill-color-blank);
-}
-
-.xgrid__row--readonly {
-  color: var(--el-text-color-secondary);
-}
-
-.xgrid__row--draft {
-  font-style: italic;
-}
-
-.xgrid__row--draft .xcell__text {
-  color: var(--el-text-color-placeholder);
-}
-
-.xcell {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 8px;
-  box-sizing: border-box;
-  border-right: 1px solid var(--el-border-color-lighter);
-  font-size: 12px;
-  line-height: 28px;
-  white-space: nowrap;
-  overflow: hidden;
-  position: relative;
-  /* Inherit the row background so frozen cells stay opaque while scrolling and
-     still follow zebra/hover states. */
-  background: inherit;
-}
-
-.xcell--frozen {
-  position: sticky;
-  z-index: 2;
-  box-shadow: 1px 0 0 var(--el-border-color-lighter);
-}
-
-.xcell--numeric {
-  justify-content: flex-end;
-}
-
-.xcell--selected {
-  box-shadow: inset 0 0 0 2px var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
-  z-index: 3;
-}
-
-.xcell--error {
-  background: var(--el-color-danger-light-9);
-  box-shadow: inset 0 0 0 1px var(--el-color-danger);
-}
-
-.xcell__text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.xcell__editor {
-  width: 100%;
-  height: 24px;
-  border: 1px solid var(--el-color-primary);
-  border-radius: 2px;
-  padding: 0 6px;
-  font-size: 12px;
-  outline: none;
-  background: var(--el-bg-color);
-  color: var(--el-text-color-primary);
-}
-
-.xcell__draft-mark {
-  color: var(--el-color-primary);
-}
-
-.xcell__spinner {
-  position: absolute;
-  right: 4px;
-  width: 10px;
-  height: 10px;
-  border: 2px solid var(--el-color-primary-light-5);
-  border-top-color: var(--el-color-primary);
-  border-radius: 50%;
-  animation: xgrid-spin 0.7s linear infinite;
-}
-
-.xcell__row-save {
-  position: absolute;
-  right: 2px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  border: 1px solid var(--el-color-primary);
-  border-radius: 3px;
-  background: var(--el-bg-color);
-  color: var(--el-color-primary);
-  font-size: 11px;
-  line-height: 1;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.12s ease;
-}
-
-.xgrid__row:hover .xcell__row-save {
-  opacity: 1;
-}
-
-@keyframes xgrid-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* 6s bulk-write heartbeat: opacity only, on a pseudo element, so it stays on
-   the compositor and never triggers a repaint of the row. */
-.xgrid__row--pulse {
-  position: relative;
-}
-
-.xgrid__row--pulse::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: var(--el-color-primary-light-7);
-  opacity: 0;
-  will-change: opacity;
-  animation: xgrid-pulse 6s ease-out forwards;
-}
-
-@keyframes xgrid-pulse {
-  0% {
-    opacity: 0.55;
-  }
-  100% {
-    opacity: 0;
-  }
-}
-
-.xgrid__row--saving .xcell {
-  opacity: 0.7;
-}
-
-.xgrid__sb {
-  position: absolute;
-  z-index: 10;
-  background: var(--el-fill-color-lighter);
-  border-radius: 5px;
-}
-
-.xgrid__sb--v {
-  top: 0;
-  right: 0;
-  width: 9px;
-  bottom: 10px;
-}
-
-.xgrid__sb--h {
-  left: 0;
-  right: 10px;
-  bottom: 0;
-  height: 9px;
-}
-
-.xgrid__sb.is-idle {
-  opacity: 0.35;
-}
-
-.xgrid__sb.is-idle .xgrid__thumb {
-  cursor: default;
-}
-
-.xgrid__thumb {
-  position: absolute;
-  background: var(--el-text-color-disabled);
-  border-radius: 5px;
-  cursor: grab;
-  touch-action: none;
-}
-
-.xgrid__sb--v .xgrid__thumb {
-  left: 1px;
-  right: 1px;
-  top: 0;
-}
-
-.xgrid__sb--h .xgrid__thumb {
-  top: 1px;
-  bottom: 1px;
-  left: 0;
-}
-
-.xgrid__thumb:active {
-  cursor: grabbing;
-}
-</style>
-
-<style scoped>
-/* ── White-green zebra theme ─────────────────────────────────────────
-   The grid stays a light "sheet" in both app themes, like a spreadsheet
-   pasted into the page. Every green is derived from the project's existing
-   --accent, so the table cannot drift away from the rest of the UI.
-   The plain hex values before each color-mix() are fallbacks for engines
-   without color-mix(); the second declaration wins where it is supported. */
-.xgrid {
-  --xg-green: var(--accent);
-  --xg-white: #ffffff;
-  --xg-stripe: #f1f8f5;
-  --xg-stripe: color-mix(in srgb, var(--xg-green) 9%, #ffffff);
-  --xg-head: #e8f4ef;
-  --xg-head: color-mix(in srgb, var(--xg-green) 15%, #ffffff);
-  --xg-head-alt: #dff0e9;
-  --xg-head-alt: color-mix(in srgb, var(--xg-green) 22%, #ffffff);
-  --xg-line: #d9eae3;
-  --xg-line: color-mix(in srgb, var(--xg-green) 20%, #ffffff);
-  --xg-hover: #eef8f4;
-  --xg-hover: color-mix(in srgb, var(--xg-green) 7%, #ffffff);
-  --xg-selected: #d9f2e9;
-  --xg-selected: color-mix(in srgb, var(--xg-green) 18%, #ffffff);
-  --xg-muted: #71857c;
-  --xg-text: #1f2d28;
-  border-color: var(--xg-line);
-  background: var(--xg-white);
-  color: var(--xg-text);
-}
-
-/* Header: green-tinted, opaque so the virtual rows scroll underneath it. */
-.xgrid__head {
-  background: var(--xg-head);
-  border-bottom: 1px solid var(--xg-green);
-}
-
-.xhead {
-  background: var(--xg-head);
-  border-right-color: var(--xg-line);
-  color: #2b5a4d;
-}
-
-.xhead--rownum {
-  background: var(--xg-head-alt);
-  color: #5d7a70;
-}
-
-/* Rows: white / pale green stripes, then hover, then selection. */
-.xgrid__row {
-  background: var(--xg-white);
-  border-bottom-color: var(--xg-line);
-  color: var(--xg-text);
-}
-
-.xgrid__row--alt {
-  background: var(--xg-stripe);
-}
-
-.xgrid__row:hover {
-  background: var(--xg-hover);
-}
-
-.xgrid__row--readonly {
-  color: var(--xg-muted);
-}
-
-.xgrid__row--draft {
-  background: #fbfefc;
-}
-
-.xgrid__row--alt.xgrid__row--draft {
-  background: var(--xg-stripe);
-}
-
-.xgrid__row--draft .xcell__text {
-  color: #93a89f;
-}
-
-.xcell {
-  border-right-color: var(--xg-line);
-  color: inherit;
-  cursor: cell;
-}
-
-.xgrid__row .xcell--rownum {
-  background: var(--xg-head);
-  border-right-color: var(--xg-line);
-  color: #5d7a70;
-  cursor: pointer;
-}
-
-.xgrid__row--alt .xcell--rownum {
-  background: var(--xg-head-alt);
-}
-
-.xgrid__row .xcell--rownum-selected {
-  background: var(--xg-selected);
-  color: var(--xg-green);
-  font-weight: 600;
-}
-
-/* The range is drawn by .xgrid__selection, so cells only carry the fill. */
-.xgrid__row .xcell--selected {
-  background: var(--xg-selected);
-  box-shadow: none;
-}
-
-.xcell--error {
-  background: #fdecea;
-  box-shadow: inset 0 0 0 1px #e05a52;
-}
-
-/* Errors must stay visible inside the selection fill. */
-.xgrid__row .xcell--error {
-  background: #fdecea;
-  box-shadow: inset 0 0 0 1px #e05a52;
-}
-
-.xgrid__selection {
-  position: absolute;
-  /* Below frozen cells (z-index 2) so a rectangle scrolled under a frozen
-     column is clipped by it instead of drawing on top of its text. */
-  z-index: 1;
-  box-sizing: border-box;
-  border: 2px solid var(--xg-green);
-  pointer-events: none;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.65);
-}
-
-.xcell__editor {
-  background: var(--xg-white);
-  border-color: var(--xg-green);
-  color: var(--xg-text);
-}
-
-.xcell__draft-mark {
-  color: var(--xg-green);
-}
-
-.xcell__row-save {
-  background: var(--xg-white);
-  border-color: var(--xg-green);
-  color: var(--xg-green);
-}
-
-.xcell__spinner {
-  border-color: var(--xg-line);
-  border-top-color: var(--xg-green);
-}
-
-.xgrid__row--pulse::after {
-  background: color-mix(in srgb, var(--xg-green) 35%, transparent);
-}
-
-.xgrid__sb {
-  background: #edf6f2;
-}
-
-.xgrid__thumb {
-  background: #a9c7bc;
-  background: color-mix(in srgb, var(--xg-green) 38%, #ffffff);
-}
+<style scoped lang="scss">
+@use '../../styles/components/grid/excel-grid.scss' as *;
 </style>

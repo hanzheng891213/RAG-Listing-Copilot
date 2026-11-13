@@ -10,10 +10,17 @@ router.get('/providers', (_req: Request, res: Response) => {
 })
 
 // GET /api/models/usage/stats — aggregated usage stats
-router.get('/usage/stats', (req: Request, res: Response) => {
+router.get('/usage/stats', async (req: Request, res: Response) => {
   const days = parseInt(req.query.days as string) || 30
-  const stats = modelService.getUsageStats(days)
-  res.json(stats)
+  try {
+    // getUsageStats is async (D1); without the await the handler serialised a
+    // pending Promise to `{}`, and the client then crashed on `totalCost`.
+    const stats = await modelService.getUsageStats(days)
+    res.json(stats)
+  } catch (err) {
+    console.error('[Models] usage stats failed:', err)
+    res.status(500).json({ error: 'Failed to load usage stats', code: 'ERR_USAGE_STATS' })
+  }
 })
 
 export default router

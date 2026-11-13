@@ -1,3 +1,6 @@
+// Must come first: populates process.env before controllers read it.
+import './env.js'
+
 import express from 'express'
 import cors from 'cors'
 import apiController, { reportClientError } from './controllers/apiController.js'
@@ -97,7 +100,7 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
   res.status(500).json({ error: 'Internal server error', code: 'ERR_INTERNAL' })
 })
 
-app.listen(PORT, async () => {
+const server = app.listen(PORT, async () => {
   console.log(`Server running on http://localhost:${PORT}`)
   console.log(`Allowed origins: ${ALLOWED_ORIGINS.join(', ') || '(none configured)'}`)
   console.log(`Health check: http://localhost:${PORT}/health`)
@@ -112,6 +115,27 @@ app.listen(PORT, async () => {
   } catch (err) {
     console.warn('[Server] Knowledge base seeding failed (non-fatal):', err)
   }
+})
+
+// `npm run dev` uses `concurrently -k`, so an unhandled EADDRINUSE takes the
+// whole dev stack (frontend included) down with a bare stack trace. Fail with
+// an actionable message instead.
+server.on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`\x1b[31m[Server] Port ${PORT} is already in use.\x1b[0m`)
+    console.error('  Another backend instance is still running (a crashed `npm run dev`')
+    console.error('  often leaves one behind, since tsx watch spawns a child process).')
+    console.error('  Free the port and retry:')
+    console.error(`    netstat -ano | findstr :${PORT}`)
+    console.error('    taskkill /PID <pid> /F')
+    console.error(`  Or pick another port:  PORT=3002 npm run dev`)
+    process.exit(1)
+  }
+  if (err.code === 'EACCES') {
+    console.error(`\x1b[31m[Server] Permission denied binding port ${PORT}.\x1b[0m`)
+    process.exit(1)
+  }
+  throw err
 })
 
 export default app

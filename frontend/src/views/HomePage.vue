@@ -1,156 +1,403 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/authStore'
+import { LISTING_LANGUAGES, PLATFORMS } from '@/utils/constants'
+import { safeLocalStorage } from '@/utils/storage'
 
+/**
+ * Landing page.
+ *
+ * Only three surfaces: the hero, the reminder board and the workflow strip.
+ * Navigation is explicit only: the hero CTAs, the per-reminder "go" arrow and
+ * nothing else. Decorative surfaces react to the pointer but never navigate.
+ */
 const { t } = useI18n()
 const router = useRouter()
 const auth = useAuthStore()
 
-const features = [
-  { titleKey: 'home.features.upload.title', descKey: 'home.features.upload.desc', icon: 'Upload', route: '/supplier-upload', color: 'var(--accent)' },
-  { titleKey: 'home.features.listing.title', descKey: 'home.features.listing.desc', icon: 'MagicStick', route: '/listing-generator', color: 'var(--accent-bright)' },
-  { titleKey: 'home.features.knowledge.title', descKey: 'home.features.knowledge.desc', icon: 'Collection', route: '/knowledge-base', color: 'var(--accent-dim)' },
-  { titleKey: 'home.features.compliance.title', descKey: 'home.features.compliance.desc', icon: 'Checked', route: '/listing-generator', color: 'var(--success)' },
-  { titleKey: 'home.features.seo.title', descKey: 'home.features.seo.desc', icon: 'TrendCharts', route: '/listing-generator', color: 'var(--accent-coral)' },
-  { titleKey: 'home.features.batch.title', descKey: 'home.features.batch.desc', icon: 'Download', route: '/listing-generator', color: 'var(--warning)' },
+const steps = [
+  { icon: 'UploadFilled', titleKey: 'home.workflow.import.title', descKey: 'home.workflow.import.desc' },
+  { icon: 'MagicStick', titleKey: 'home.workflow.generate.title', descKey: 'home.workflow.generate.desc' },
+  { icon: 'ChatDotRound', titleKey: 'home.workflow.refine.title', descKey: 'home.workflow.refine.desc' },
+  { icon: 'Download', titleKey: 'home.workflow.export.title', descKey: 'home.workflow.export.desc' },
 ]
 
-function navigate(path: string) {
+/**
+ * Home checklist.
+ *
+ * No seeded reminders: the board is entirely the user's own list, edited in
+ * place and persisted to localStorage. `v2` intentionally ignores the old
+ * boolean map so the removed mock items cannot reappear.
+ */
+interface HomeTodo {
+  id: string
+  text: string
+  done: boolean
+}
+
+const TODO_STORAGE_KEY = 'rag-copilot-home-todos-v2'
+const MAX_TODO_LENGTH = 120
+
+function createTodoId(): string {
+  return `todo-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
+}
+
+function loadTodos(): HomeTodo[] {
+  try {
+    const parsed = JSON.parse(safeLocalStorage.getItem(TODO_STORAGE_KEY) || '[]')
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .filter((item) => item && typeof item.text === 'string' && item.text.trim())
+      .map((item) => ({
+        id: typeof item.id === 'string' && item.id ? item.id : createTodoId(),
+        text: item.text.slice(0, MAX_TODO_LENGTH),
+        done: Boolean(item.done),
+      }))
+  } catch {
+    return []
+  }
+}
+
+const todos = ref<HomeTodo[]>(loadTodos())
+const newTodo = ref('')
+
+const total = computed(() => todos.value.length)
+const doneCount = computed(() => todos.value.filter((todo) => todo.done).length)
+const progress = computed(() =>
+  total.value === 0 ? 0 : Math.round((doneCount.value / total.value) * 100),
+)
+const allDone = computed(() => total.value > 0 && doneCount.value === total.value)
+
+watch(todos, persistTodos, { deep: true })
+
+function persistTodos(): void {
+  safeLocalStorage.setItem(TODO_STORAGE_KEY, JSON.stringify(todos.value))
+}
+
+function addTodo(): void {
+  const text = newTodo.value.trim()
+  if (!text) return
+  todos.value.push({ id: createTodoId(), text: text.slice(0, MAX_TODO_LENGTH), done: false })
+  newTodo.value = ''
+}
+
+function toggleTodo(id: string): void {
+  const todo = todos.value.find((item) => item.id === id)
+  if (todo) todo.done = !todo.done
+}
+
+function removeTodo(id: string): void {
+  todos.value = todos.value.filter((todo) => todo.id !== id)
+}
+
+/** An emptied title means the user wants the row gone, not an invisible todo. */
+function onTodoBlur(todo: HomeTodo): void {
+  todo.text = todo.text.trim()
+  if (!todo.text) removeTodo(todo.id)
+}
+
+function onTodoEnter(event: Event): void {
+  ;(event.target as HTMLInputElement).blur()
+}
+
+function resetTodos(): void {
+  todos.value.forEach((todo) => {
+    todo.done = false
+  })
+}
+
+const languageCount = LISTING_LANGUAGES.length
+const platformCount = PLATFORMS.length
+const prefersReducedMotion =
+  typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+const visualEl = ref<HTMLElement | null>(null)
+
+function navigate(path: string): void {
   router.push(path)
 }
 
-onMounted(() => {
-  if (!CSS.supports('animation-timeline: view()')) {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            entry.target.classList.add('revealed')
-          }
-        })
-      },
-      { threshold: 0.1 },
-    )
-    document.querySelectorAll('.feature-card').forEach((card) => {
-      observer.observe(card)
-    })
-  }
-})
+function primaryAction(): void {
+  if (auth.isLoggedIn) navigate('/product-grid')
+  else auth.openLoginModal()
+}
+
+function onVisualPointerMove(event: PointerEvent): void {
+  if (prefersReducedMotion) return
+  const el = event.currentTarget as HTMLElement | null
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  const px = (event.clientX - rect.left) / rect.width - 0.5
+  const py = (event.clientY - rect.top) / rect.height - 0.5
+  el.style.setProperty('--tilt-x', `${(-py * 7).toFixed(2)}deg`)
+  el.style.setProperty('--tilt-y', `${(px * 10).toFixed(2)}deg`)
+}
+
+function resetVisual(): void {
+  const el = visualEl.value
+  if (!el) return
+  el.style.setProperty('--tilt-x', '0deg')
+  el.style.setProperty('--tilt-y', '0deg')
+}
 </script>
 
 <template>
   <div class="home-page">
+    <!-- ── Hero ───────────────────────────────────────────────────── -->
     <section class="hero">
       <div class="hero-content">
+        <span class="eyebrow">
+          <span class="eyebrow-dot" />
+          {{ t('home.eyebrow') }}
+        </span>
+
         <h1 class="hero-title">
-          {{ t('home.heroTitle1') }}
-          <span class="hero-accent">{{ t('home.heroTitle2') }}</span>
-          {{ t('home.heroTitle3') }}
+          <span class="hero-line">{{ t('home.headlineTop') }}</span>
+          <span class="hero-line">
+            <em>{{ t('home.headlineAccent') }}</em>
+            {{ t('home.headlineBottom') }}
+          </span>
         </h1>
+
         <p class="hero-subtitle">{{ t('home.heroSubtitle') }}</p>
+
         <div class="hero-actions">
-          <template v-if="auth.isLoggedIn">
-            <button class="btn-primary" @click="navigate('/listing-generator')">
-              <el-icon><MagicStick /></el-icon>
-              <span>{{ t('home.uploadBtn') }}</span>
-            </button>
-            <button class="btn-secondary" @click="navigate('/model-manager')">
-              <span>{{ t('nav.modelManager') }}</span>
-              <el-icon><ArrowRight /></el-icon>
-            </button>
-          </template>
-          <template v-else>
-            <button class="btn-primary" @click="auth.openLoginModal()">
-              <el-icon><UserFilled /></el-icon>
-              <span>{{ t('home.loginBtn') }}</span>
-            </button>
-            <button class="btn-secondary" @click="navigate('/listing-generator')">
-              <span>{{ t('home.demoBtn') }}</span>
-              <el-icon><ArrowRight /></el-icon>
-            </button>
-          </template>
+          <button type="button" class="btn-primary" @click="primaryAction">
+            <el-icon><Grid /></el-icon>
+            <span>{{ auth.isLoggedIn ? t('home.uploadBtn') : t('home.loginBtn') }}</span>
+            <el-icon class="btn-arrow"><ArrowRight /></el-icon>
+          </button>
+          <button type="button" class="btn-secondary" @click="navigate('/listing-generator')">
+            <el-icon><MagicStick /></el-icon>
+            <span>{{ t('home.demoBtn') }}</span>
+          </button>
         </div>
+
+        <dl class="hero-proof">
+          <div class="proof-item">
+            <dt>{{ languageCount }}</dt>
+            <dd>{{ t('home.proof.languages') }}</dd>
+          </div>
+          <div class="proof-item">
+            <dt>{{ platformCount }}</dt>
+            <dd>{{ t('home.proof.platforms') }}</dd>
+          </div>
+          <div class="proof-item">
+            <dt>RAG</dt>
+            <dd>{{ t('home.proof.rules') }}</dd>
+          </div>
+        </dl>
       </div>
-      <div class="hero-visual">
-        <div class="hero-card">
-          <div class="hero-card-header">
-            <span class="hero-card-dot" />
-            <span class="hero-card-dot" />
-            <span class="hero-card-dot" />
+
+      <!-- A real listing mock, not an abstract diagram: the thing the product
+           actually produces, with its score, compliance and keywords. -->
+      <div
+        ref="visualEl"
+        class="hero-visual"
+        @pointermove="onVisualPointerMove"
+        @pointerleave="resetVisual"
+      >
+        <div class="visual-orbit" aria-hidden="true" />
+        <div class="listing-demo">
+          <header class="demo-head">
+            <span class="demo-platform">
+              <span class="demo-dot" />
+              {{ t('home.demo.platform') }}
+            </span>
+            <span class="demo-live">
+              <i />
+              {{ t('home.demo.generating') }}
+            </span>
+          </header>
+
+          <div class="demo-product">
+            <div class="demo-thumb">
+              <el-icon><Goods /></el-icon>
+            </div>
+            <div class="demo-heading">
+              <span class="demo-sku">{{ t('home.demo.sku') }}</span>
+              <p class="demo-title">{{ t('home.demo.title') }}</p>
+            </div>
           </div>
-          <div class="hero-card-body">
-            <div class="hero-card-line short" />
-            <div class="hero-card-line" />
-            <div class="hero-card-line" />
-            <div class="hero-card-line medium" />
+
+          <div class="demo-stream" aria-hidden="true"><span /></div>
+
+          <ul class="demo-bullets">
+            <li><el-icon><CircleCheck /></el-icon><span>{{ t('home.demo.bullet1') }}</span></li>
+            <li><el-icon><CircleCheck /></el-icon><span>{{ t('home.demo.bullet2') }}</span></li>
+            <li><el-icon><CircleCheck /></el-icon><span>{{ t('home.demo.bullet3') }}</span></li>
+          </ul>
+
+          <div class="demo-bottom">
+            <div class="demo-score">
+              <div class="score-ring" :style="{ '--score': 92 }">
+                <span class="score-value">92</span>
+                <span class="score-max">/100</span>
+              </div>
+              <div class="score-copy">
+                <span class="score-label">{{ t('home.demo.seo') }}</span>
+                <div class="score-keywords">
+                  <span>camping lantern</span>
+                  <span>power bank</span>
+                  <span>IPX4</span>
+                </div>
+              </div>
+            </div>
+            <span class="demo-compliance">
+              <el-icon><CircleCheckFilled /></el-icon>
+              {{ t('home.demo.compliance') }}
+            </span>
           </div>
-          <div class="hero-card-accent" />
+
+          <footer class="demo-footer">
+            <span class="demo-keywords-label">{{ t('home.demo.keywords') }}</span>
+            <span class="demo-export">
+              {{ t('home.demo.exportLabel') }}
+              <el-icon><Download /></el-icon>
+            </span>
+          </footer>
         </div>
-        <div class="hero-glow" />
       </div>
     </section>
 
-    <section class="features-section">
-      <h2 class="section-title">{{ t('home.sectionTitle') }}</h2>
-      <div class="features-grid">
-        <div
-          v-for="(feature, index) in features"
-          :key="feature.titleKey"
-          class="feature-card"
-          :style="{ animationDelay: `${index * 0.1}s` }"
-          @click="navigate(feature.route)"
-        >
-          <div class="feature-icon" :style="{ color: feature.color }">
-            <el-icon><component :is="feature.icon" /></el-icon>
-          </div>
-          <h3 class="feature-title">{{ t(feature.titleKey) }}</h3>
-          <p class="feature-desc">{{ t(feature.descKey) }}</p>
+    <!-- ── Reminders ──────────────────────────────────────────────── -->
+    <section class="todo-section">
+      <div class="section-head todo-head">
+        <div class="todo-heading">
+          <span class="section-kicker">{{ t('home.todo.kicker') }}</span>
+          <h2 class="section-title">{{ t('home.todo.title') }}</h2>
         </div>
+
+        <div class="todo-progress" :class="{ complete: allDone }">
+          <div class="progress-top">
+            <span class="progress-value">
+              {{ t('home.todo.progress', { done: doneCount, total }) }}
+            </span>
+            <button
+              type="button"
+              class="progress-reset"
+              :disabled="doneCount === 0"
+              @click="resetTodos"
+            >
+              {{ t('home.todo.reset') }}
+            </button>
+          </div>
+          <div
+            class="progress-track"
+            role="progressbar"
+            :aria-valuenow="progress"
+            aria-valuemin="0"
+            aria-valuemax="100"
+          >
+            <span class="progress-fill" :style="{ width: `${progress}%` }" />
+          </div>
+        </div>
+      </div>
+
+      <div class="todo-add">
+        <input
+          v-model="newTodo"
+          class="todo-add-input"
+          type="text"
+          :maxlength="MAX_TODO_LENGTH"
+          :placeholder="t('home.todo.addPlaceholder')"
+          @keydown.enter.prevent="addTodo"
+        />
+        <button
+          type="button"
+          class="todo-add-btn"
+          :disabled="!newTodo.trim()"
+          @click="addTodo"
+        >
+          <el-icon><Plus /></el-icon>
+          {{ t('home.todo.add') }}
+        </button>
+      </div>
+
+      <ul v-if="todos.length" class="todo-grid">
+        <li
+          v-for="todo in todos"
+          :key="todo.id"
+          class="todo-card"
+          :class="{ done: todo.done }"
+        >
+          <button
+            type="button"
+            class="todo-check"
+            role="checkbox"
+            :aria-checked="todo.done"
+            :aria-label="t('home.todo.toggle')"
+            @click="toggleTodo(todo.id)"
+          >
+            <el-icon v-if="todo.done"><Check /></el-icon>
+          </button>
+
+          <div class="todo-copy">
+            <input
+              v-model="todo.text"
+              class="todo-title-input"
+              type="text"
+              :maxlength="MAX_TODO_LENGTH"
+              :aria-label="t('home.todo.edit')"
+              :title="t('home.todo.edit')"
+              @blur="onTodoBlur(todo)"
+              @keydown.enter.prevent="onTodoEnter"
+            />
+          </div>
+
+          <button
+            type="button"
+            class="todo-delete"
+            :aria-label="t('common.delete')"
+            :title="t('common.delete')"
+            @click="removeTodo(todo.id)"
+          >
+            <el-icon><Delete /></el-icon>
+          </button>
+        </li>
+      </ul>
+
+      <div v-else class="todo-empty">
+        <el-icon><List /></el-icon>
+        <p>{{ t('home.todo.empty') }}</p>
+      </div>
+
+      <p v-if="allDone" class="todo-done-note">
+        <el-icon><CircleCheckFilled /></el-icon>
+        {{ t('home.todo.allDone') }}
+      </p>
+    </section>
+
+    <!-- ── Workflow (compact, closing the page) ───────────────────── -->
+    <section class="workflow-section">
+      <div class="section-head workflow-head">
+        <span class="section-kicker">{{ t('home.workflow.kicker') }}</span>
+        <h2 class="section-title">{{ t('home.workflow.title') }}</h2>
+      </div>
+
+      <div class="workflow-track">
+        <article
+          v-for="(step, index) in steps"
+          :key="step.titleKey"
+          class="workflow-step"
+          :style="{ '--step-index': index }"
+        >
+          <span class="step-number">{{ String(index + 1).padStart(2, '0') }}</span>
+          <span class="step-icon">
+            <el-icon><component :is="step.icon" /></el-icon>
+          </span>
+          <div class="step-copy">
+            <h3 class="step-title">{{ t(step.titleKey) }}</h3>
+            <p class="step-desc">{{ t(step.descKey) }}</p>
+          </div>
+        </article>
       </div>
     </section>
   </div>
 </template>
 
-<style scoped>
-.home-page { padding-bottom: 40px; min-height: 0; }
-.hero { display: flex; align-items: center; gap: 48px; padding: 24px 0 32px; position: relative; }
-.hero-content { flex: 1; max-width: 520px; }
-.hero-title { font-size: clamp(36px, 5vw, 56px); font-weight: 400; color: var(--text-primary); line-height: 1.15; margin-bottom: 16px; letter-spacing: -0.5px; }
-.hero-accent { color: var(--accent); font-style: italic; }
-.hero-subtitle { font-size: 16px; color: var(--text-secondary); line-height: 1.65; margin-bottom: 28px; max-width: 460px; }
-.hero-actions { display: flex; gap: 12px; }
-.btn-primary { display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; background: var(--accent); border: 1px solid var(--accent); border-radius: var(--radius-md); color: var(--bg-primary); font-family: var(--font-body); font-size: 14px; font-weight: 600; cursor: pointer; transition: all var(--transition-base); position: relative; overflow: hidden; }
-.btn-primary:hover { background: var(--accent-bright); border-color: var(--accent-bright); transform: translateY(-1px); box-shadow: 0 8px 24px var(--accent-glow-strong); }
-.btn-secondary { display: inline-flex; align-items: center; gap: 6px; padding: 12px 24px; background: transparent; border: 1px solid var(--border-light); border-radius: var(--radius-md); color: var(--text-primary); font-family: var(--font-body); font-size: 14px; font-weight: 500; cursor: pointer; transition: all var(--transition-base); }
-.btn-secondary:hover { border-color: var(--accent); color: var(--accent); box-shadow: 0 8px 24px var(--accent-glow); }
-.hero-visual { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; min-height: 220px; max-height: 260px; }
-.hero-card { width: 280px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 18px; position: relative; overflow: hidden; box-shadow: 0 16px 48px var(--shadow-color); }
-.hero-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(to right, var(--accent), var(--accent-bright), var(--accent-dim)); }
-.hero-card-header { display: flex; gap: 6px; margin-bottom: 18px; }
-.hero-card-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border-light); }
-.hero-card-dot:first-child { background: var(--accent-coral); }
-.hero-card-body { display: flex; flex-direction: column; gap: 10px; }
-.hero-card-line { height: 10px; border-radius: 3px; background: var(--bg-primary); width: 100%; }
-.hero-card-line.short { width: 40%; }
-.hero-card-line.medium { width: 70%; }
-.hero-card-accent { margin-top: 16px; height: 32px; border-radius: var(--radius-sm); background: var(--accent-glow); border: 1px dashed var(--accent-dim); }
-.hero-glow { position: absolute; top: -80px; right: -80px; width: 280px; height: 280px; border-radius: 50%; background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%); pointer-events: none; }
-.features-section { padding-top: 8px; }
-.section-title { font-size: 24px; font-weight: 400; color: var(--text-primary); margin-bottom: 24px; text-align: center; }
-.features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; grid-auto-flow: dense; }
-.feature-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 22px 24px; cursor: pointer; transition: all var(--transition-base); position: relative; overflow: hidden; opacity: 0; transform: scale(0.92) translateY(24px); }
-.feature-card.revealed { opacity: 1; transform: scale(1) translateY(0); transition: opacity 0.6s ease, transform 0.6s ease, border-color 0.4s, background 0.4s; }
-@supports (animation-timeline: view()) { .feature-card { animation: slide-fade-in both; animation-timeline: view(); animation-range: contain 0% contain 35%; } }
-.feature-card::before { content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 2px; background: linear-gradient(to right, transparent, var(--accent-dim), transparent); transform: translateX(-100%); transition: transform 0.6s; }
-.feature-card:hover::before { transform: translateX(0); }
-.feature-card:hover { border-color: var(--accent-dim); background: var(--bg-card-hover); transform: translateY(-2px); box-shadow: 0 8px 30px var(--shadow-color); }
-.feature-card:nth-of-type(4n) { grid-column: span 2; }
-.feature-icon { margin-bottom: 14px; width: 44px; height: 44px; border-radius: var(--radius-md); background: var(--accent-glow); display: flex; align-items: center; justify-content: center; }
-.feature-icon .el-icon { font-size: 22px; }
-.feature-title { font-family: var(--font-body); font-size: 15px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px; }
-.feature-desc { font-size: 13px; color: var(--text-secondary); line-height: 1.6; }
-@media (max-width: 1024px) { .hero { flex-direction: column; gap: 32px; padding: 20px 0 28px; } .hero-content { max-width: 100%; } .features-grid { grid-template-columns: repeat(2, 1fr); } .feature-card:nth-of-type(4n) { grid-column: span 1; } }
-@media (max-width: 768px) { .hero { padding: 16px 0 28px; } .hero-title { font-size: 32px; } .hero-actions { flex-direction: column; } .hero-visual { display: none; } .features-grid { grid-template-columns: 1fr; } .section-title { font-size: 20px; margin-bottom: 20px; } }
+<style scoped lang="scss">
+@use '../styles/components/views/home-page.scss' as *;
 </style>

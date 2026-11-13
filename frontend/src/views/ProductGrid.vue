@@ -1,30 +1,45 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import ExcelGrid from '@/components/grid/ExcelGrid.vue'
 import GridToolbar from '@/components/grid/GridToolbar.vue'
 import GridLayoutPanel from '@/components/grid/GridLayoutPanel.vue'
-import GridImportDialog from '@/components/grid/GridImportDialog.vue'
+import ImportReportDialog from '@/components/grid/ImportReportDialog.vue'
+import LanguageRadialMenu from '@/components/listing/LanguageRadialMenu.vue'
 import { useProductGrid } from '@/composables/useProductGrid'
 import { useGridSelection } from '@/composables/useGridSelection'
 import { useGridClipboard } from '@/composables/useGridClipboard'
+import { useListingGeneration, listingToFields } from '@/composables/useListingGeneration'
 import { useAuthStore } from '@/stores/authStore'
+import { useModelStore } from '@/stores/modelStore'
 import { useSupplierStore } from '@/stores/supplierStore'
+import { uploadSupplier } from '@/api/supplier'
+import { FILE_ACCEPT_EXTENSIONS, GRID_DEFAULT_PAGE_SIZE, PLATFORMS } from '@/utils/constants'
 import type { GridImportIssue, GridLayout, GridRow } from '@/types/grid'
+
+/**
+ * 商品上架表 — the single page for supplier data.
+ *
+ * It replaces the old two-step flow (上传页 → 表格页): importing is a toolbar
+ * button or a drop on the table, imported rows are persisted immediately, and a
+ * row can be generated in place — the listing is written back into the same row
+ * and saved, so the table is always the source of truth.
+ */
 
 const { t } = useI18n()
 const auth = useAuthStore()
+const modelStore = useModelStore()
 const supplierStore = useSupplierStore()
-const route = useRoute()
 const router = useRouter()
 
 const regionRef = ref<HTMLElement | null>(null)
 const gridRef = ref<InstanceType<typeof ExcelGrid> | null>(null)
+const fileInput = ref<HTMLInputElement | null>(null)
 const gridHeight = ref(480)
 const layoutOpen = ref(false)
-const importOpen = ref(false)
+const reportOpen = ref(false)
 const importReport = ref<{
   version: number
   fileName: string
@@ -33,6 +48,13 @@ const importReport = ref<{
   issues: GridImportIssue[]
 } | null>(null)
 let reportVersion = 0
+
+const importing = ref(false)
+const generatingIds = ref<string[]>([])
+const dragging = ref(false)
+let dragDepth = 0
+
+const ring = ref({ open: false, rowId: '', x: 0, y: 0 })
 
 const ownerId = () => auth.user?.id ?? ''
 const ownerName = () => auth.user?.username ?? ''
@@ -47,7 +69,7 @@ const grid = useProductGrid({
     // it is typed into it belongs to that user.
     return !row.ownerId || row.ownerId === ownerId()
   },
-  pageSize: 100,
+  pageSize: GRID_DEFAULT_PAGE_SIZE,
   onNotice: (notice) => {
     ElMessage({ message: notice.message, type: notice.type, duration: 2200 })
   },
@@ -79,6 +101,8 @@ const {
 
 const selectionApi = useGridSelection()
 const selection = selectionApi.selection
+
+const { platform, generate } = useListingGeneration()
 
 const selectedRowIds = computed(() => {
   const box = selectionApi.bounds(rows.value, visibleFields.value)
@@ -146,33 +170,14 @@ onMounted(async () => {
     initializing.value = false
   }
 
-  consumePendingImport()
+  // A file dropped outside this page is stashed by the layout and picked up
+  // here once the grid is ready.
+  const pending = supplierStore.pendingFile as File | null
+  if (pending) {
+    supplierStore.setPendingFile(null)
+    void importFile(pending)
+  }
 })
-
-/**
- * One-shot handoff from the upload page. The query flag is cleared after use so
- * a refresh does not silently re-import the same file a second time.
- */
-function consumePendingImport(): void {
-  if (route.query.import !== '1') return
-  const parsed = supplierStore.products
-  router.replace({ query: {} })
-  if (parsed.length === 0) return
-
-  const records = parsed.map((product) => ({ ...product.rawData }))
-  const result = grid.importRecords(records, 2)
-  importReport.value = {
-    version: ++reportVersion,
-    fileName: supplierStore.currentFileName || 'upload',
-    added: result.added,
-    skipped: result.skipped,
-    issues: result.issues,
-  }
-  importOpen.value = true
-  if (result.added > 0) {
-    ElMessage.success(t('grid.imported', { count: result.added }))
-  }
-}
 
 onBeforeUnmount(() => {
   resizeObserver?.disconnect()
@@ -232,8 +237,15 @@ function onDelete(): void {
   const result = grid.deleteRows(ids)
   if (result.deleted === 0 && result.skipped > 0) {
     ElMessage.warning(t('grid.cannotDelete'))
-  } else if (result.skipped > 0) {
+    return
+  }
+  if (result.skipped > 0) {
     ElMessage.warning(t('grid.partialDelete', { deleted: result.deleted, skipped: result.skipped }))
+  }
+  // Deletion is a draft change: the row disappears now, but the batch endpoint
+  // only receives it when the user presses Save (or discards it).
+  if (result.deleted > 0) {
+    ElMessage.info(t('grid.deleteDraftedCount', { count: result.deleted }))
   }
 }
 
@@ -299,47 +311,241 @@ function onLayoutSaveDefault(next: GridLayout): void {
   ElMessage.success(t('grid.layoutSaved'))
 }
 
-function onParsed(payload: { records: Array<Record<string, string>>; fileName: string }): void {
-  const result = grid.importRecords(payload.records, 2)
-  importReport.value = {
-    version: ++reportVersion,
-    fileName: payload.fileName,
-    added: result.added,
-    skipped: result.skipped,
-    issues: result.issues,
+// ── Import (toolbar button + drop on the table) ─────────────────────
+function onImportClick(): void {
+  if (!canWrite.value) {
+    ElMessage.warning(t('grid.loginToImport'))
+    return
   }
-  if (result.added > 0) {
-    ElMessage.success(t('grid.imported', { count: result.added }))
-  } else {
-    ElMessage.warning(t('grid.importNothing'))
+  fileInput.value?.click()
+}
+
+function onFilePicked(event: Event): void {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (file) void importFile(file)
+}
+
+function onDragEnter(event: DragEvent): void {
+  if (!event.dataTransfer?.types.includes('Files')) return
+  dragDepth += 1
+  dragging.value = true
+}
+
+function onDragLeave(): void {
+  dragDepth = Math.max(0, dragDepth - 1)
+  if (dragDepth === 0) dragging.value = false
+}
+
+function onDropFile(event: DragEvent): void {
+  dragDepth = 0
+  dragging.value = false
+  const file = event.dataTransfer?.files?.[0]
+  if (file) void importFile(file)
+}
+
+function isAcceptedFile(file: File): boolean {
+  const ext = '.' + (file.name.split('.').pop()?.toLowerCase() ?? '')
+  return FILE_ACCEPT_EXTENSIONS.includes(ext)
+}
+
+/**
+ * Parse → map headers → append before the draft block → persist.
+ *
+ * Import is a write into the 上架表, not a preview: the rows survive a reload,
+ * which is what makes "generate straight from the table" work.
+ */
+async function importFile(file: File): Promise<void> {
+  if (!canWrite.value) {
+    ElMessage.warning(t('grid.loginToImport'))
+    return
+  }
+  if (!isAcceptedFile(file)) {
+    ElMessage.warning(t('grid.unsupportedFile'))
+    return
+  }
+  if (importing.value) return
+
+  importing.value = true
+  try {
+    const response = await uploadSupplier(file)
+    const products = response.products ?? []
+    if (products.length === 0) {
+      ElMessage.error(t('grid.importEmpty'))
+      return
+    }
+
+    const result = grid.importRecords(
+      products.map((product) => product.rawData),
+      2,
+    )
+    importReport.value = {
+      version: ++reportVersion,
+      fileName: file.name,
+      added: result.added,
+      skipped: result.skipped,
+      issues: result.issues,
+    }
+
+    if (result.added === 0) {
+      reportOpen.value = true
+      ElMessage.warning(t('grid.importNothing'))
+      return
+    }
+
+    const saved = await grid.saveAll()
+    if (!saved) {
+      ElMessage.warning(t('grid.importPartial', { count: result.added }))
+    } else {
+      ElMessage.success(t('grid.importedSaved', { count: result.added }))
+    }
+    if (result.skipped > 0) reportOpen.value = true
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error('[ProductGrid] import failed:', error)
+    ElMessage.error(`${t('grid.importFailed')}: ${message}`)
+  } finally {
+    importing.value = false
+  }
+}
+
+function onRowDelete(payload: { rowId: string }): void {
+  const result = grid.deleteRows([payload.rowId])
+  if (result.deleted === 0) {
+    ElMessage.warning(t('grid.cannotDelete'))
+    return
+  }
+  focusRegion()
+  ElMessage.info(t('grid.deleteDrafted'))
+}
+
+// ── Per-row generation ─────────────────────────────────────────────
+function onRowGenerate(payload: { rowId: string; x: number; y: number }): void {
+  if (!auth.isLoggedIn) {
+    ElMessage.warning(t('grid.loginToGenerate'))
+    return
+  }
+  if (!modelStore.hasAnyConfigured) {
+    ElMessage.warning(t('grid.noModel'))
+    router.push('/model-manager')
+    return
+  }
+  ring.value = { open: true, rowId: payload.rowId, x: payload.x, y: payload.y }
+}
+
+async function onRingSelect(language: string): Promise<void> {
+  const rowId = ring.value.rowId
+  ring.value.open = false
+  if (!rowId) return
+  await generateRow(rowId, language)
+}
+
+/**
+ * Generates one row and writes the listing straight back into it.
+ *
+ * Persisting here is intentional: the table is the deliverable, so a generated
+ * row that only lives in memory would be lost on the next page change.
+ */
+async function generateRow(rowId: string, language: string): Promise<void> {
+  const row = rows.value.find((candidate) => candidate.id === rowId)
+  if (!row || generatingIds.value.includes(rowId)) return
+
+  generatingIds.value = [...generatingIds.value, rowId]
+  try {
+    const listing = await generate({ id: row.id, fields: { ...row.fields } }, language)
+    const patch = listingToFields(listing)
+    if (!patch.title && !patch.description) {
+      ElMessage.warning(t('grid.generateEmpty'))
+      return
+    }
+
+    const changed = grid.applyFields(rowId, patch)
+    if (!changed) {
+      ElMessage.info(t('grid.generateUnchanged'))
+      return
+    }
+
+    const saved = await grid.saveOne(rowId, { silent: true })
+    grid.startBatchPulse([rowId])
+    if (saved) {
+      ElMessage.success(t('grid.generatedSaved', { name: row.fields.productName || row.fields.sku || rowId }))
+    } else {
+      ElMessage.warning(t('grid.generateNotSaved'))
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (message === 'NO_MODEL') {
+      ElMessage.warning(t('grid.noModel'))
+      router.push('/model-manager')
+      return
+    }
+    console.error('[ProductGrid] generation failed:', error)
+    ElMessage.error(`${t('grid.generateFailed')}: ${message}`)
+  } finally {
+    generatingIds.value = generatingIds.value.filter((id) => id !== rowId)
   }
 }
 
 // ── Paging: save / discard / cancel before leaving a dirty page ─────
+/**
+ * Guard shared by page changes and page-size changes. Returns false only when
+ * the user should stay on the current page (dialog closed or save failed).
+ */
+async function confirmLeaveDirty(): Promise<boolean> {
+  // A click on the pager blurs the open cell editor, but its commit only makes
+  // `dirty` true after the 120ms summary debounce. Commit + recompute now so a
+  // just-typed value can never be lost by an immediate page change.
+  gridRef.value?.commitEditing()
+  grid.refreshSummary()
+  if (!dirty.value) return true
+
+  try {
+    await ElMessageBox.confirm(t('grid.pageDirty'), t('grid.pageDirtyTitle'), {
+      distinguishCancelAndClose: true,
+      type: 'warning',
+      confirmButtonText: t('grid.saveAndGo'),
+      cancelButtonText: t('grid.discardAndGo'),
+    })
+    const ok = await onSave()
+    return ok || !dirty.value
+  } catch (action) {
+    // "cancel" = discard and continue; any other (close) = stay here.
+    if (action !== 'cancel') return false
+    grid.discardChanges()
+    return true
+  }
+}
+
 async function onPageChange(next: number): Promise<void> {
   if (next === page.value) return
-
-  if (dirty.value) {
-    try {
-      await ElMessageBox.confirm(t('grid.pageDirty'), t('grid.pageDirtyTitle'), {
-        distinguishCancelAndClose: true,
-        type: 'warning',
-        confirmButtonText: t('grid.saveAndGo'),
-        cancelButtonText: t('grid.discardAndGo'),
-      })
-      const ok = await onSave()
-      if (!ok && dirty.value) return
-    } catch (action) {
-      // "cancel" = discard and continue; any other (close) = stay here.
-      if (action !== 'cancel') return
-      grid.discardChanges()
-    }
-  }
+  if (!(await confirmLeaveDirty())) return
 
   try {
     await grid.loadPage(next)
   } catch (err) {
     console.error('[ProductGrid] page load failed:', err)
+    ElMessage.error(t('grid.loadFailed'))
+  }
+}
+
+/**
+ * A new page size always restarts at page 1: the old page number is meaningless
+ * once the slices change, and jumping to a clamped last page would surprise.
+ */
+async function onPageSizeChange(next: number): Promise<void> {
+  if (next === pageSize.value) return
+  if (!(await confirmLeaveDirty())) return
+
+  const previous = pageSize.value
+  grid.setPageSize(next)
+  try {
+    // loadPage() writes the resolved page back, so the toolbar never shows a
+    // page that failed to load.
+    await grid.loadPage(1)
+  } catch (err) {
+    grid.setPageSize(previous)
+    console.error('[ProductGrid] page size change failed:', err)
     ElMessage.error(t('grid.loadFailed'))
   }
 }
@@ -372,28 +578,37 @@ const shortcuts = computed(() => [
   { keys: 'Ctrl + A', action: t('grid.shortcutSelectAll') },
   { keys: 'Enter / F2', action: t('grid.shortcutEdit') },
   { keys: 'Delete', action: t('grid.shortcutClear') },
-  { keys: 'Shift + 方向键', action: t('grid.shortcutRange') },
+  { keys: 'Shift + ↑↓←→', action: t('grid.shortcutRange') },
 ])
 </script>
 
 <template>
-  <div class="product-grid-page">
+  <div class="product-listing-page">
     <div class="page-header">
       <div>
-        <h1 class="page-title">{{ t('grid.title') }}</h1>
         <p class="page-desc">{{ t('grid.description') }}</p>
       </div>
-      <el-popover placement="bottom-end" :width="280" trigger="click">
-        <template #reference>
-          <el-button size="small" text>{{ t('grid.shortcuts') }}</el-button>
-        </template>
-        <div class="shortcut-list">
-          <div v-for="item in shortcuts" :key="item.keys" class="shortcut-row">
-            <kbd>{{ item.keys }}</kbd>
-            <span>{{ item.action }}</span>
+      <div class="header-tools">
+        <el-select v-model="platform" size="small" class="platform-select">
+          <el-option
+            v-for="item in PLATFORMS"
+            :key="item.value"
+            :label="item.label"
+            :value="item.value"
+          />
+        </el-select>
+        <el-popover placement="bottom-end" :width="280" trigger="click">
+          <template #reference>
+            <el-button size="small" text>{{ t('grid.shortcuts') }}</el-button>
+          </template>
+          <div class="shortcut-list">
+            <div v-for="item in shortcuts" :key="item.keys" class="shortcut-row">
+              <kbd>{{ item.keys }}</kbd>
+              <span>{{ item.action }}</span>
+            </div>
           </div>
-        </div>
-      </el-popover>
+        </el-popover>
+      </div>
     </div>
 
     <el-alert
@@ -410,6 +625,7 @@ const shortcuts = computed(() => [
       :summary="summary"
       :saving="saving || mutating"
       :loading="loading"
+      :importing="importing"
       :can-write="canWrite"
       :selected-count="selectedRowIds.length"
       :page="page"
@@ -422,18 +638,24 @@ const shortcuts = computed(() => [
       @delete="onDelete"
       @save="onSave"
       @discard="onDiscard"
-      @import="importOpen = true"
+      @import="onImportClick"
       @export="onExport"
       @layout="layoutOpen = true"
       @update:search="onSearch"
       @update:page="onPageChange"
+      @update:page-size="onPageSizeChange"
       @refresh="onRefresh"
     />
 
     <div
       ref="regionRef"
       class="grid-region"
+      :class="{ 'is-drop-target': dragging }"
       tabindex="0"
+      @dragenter.prevent.stop="onDragEnter"
+      @dragover.prevent.stop
+      @dragleave.prevent.stop="onDragLeave"
+      @drop.prevent.stop="onDropFile"
       @copy.capture="clipboard.onCopy"
       @cut.capture="clipboard.onCut"
       @paste.capture="clipboard.onPaste"
@@ -453,15 +675,30 @@ const shortcuts = computed(() => [
         :cell-errors="cellErrors"
         :saving="saving"
         :draft-start="draftStart"
+        :actions="true"
+        :action-labels="{
+          header: t('grid.actionsHeader'),
+          save: t('grid.saveAction'),
+          generate: t('grid.generateAction'),
+          delete: t('grid.deleteAction'),
+        }"
+        :generating-ids="generatingIds"
         @cell-change="onCellChange"
         @select="onSelect"
         @select-row="onSelectRow"
         @request-save-row="onRowSave"
+        @row-generate="onRowGenerate"
+        @row-delete="onRowDelete"
       />
+
+      <div v-if="dragging" class="drop-hint">
+        <el-icon :size="26"><UploadFilled /></el-icon>
+        <span>{{ t('grid.dropToImport') }}</span>
+      </div>
     </div>
 
     <p class="grid-footnote">
-      {{ t('grid.footnote', { rows: fields.length, total: totalItems }) }}
+      {{ t('grid.footnote', { rows: fields.length, total: totalItems, pageSize }) }}
       <span v-if="selectionSize" class="grid-footnote__selection">
         · {{ t('grid.selectionSize', { rows: selectionSize.rows, cols: selectionSize.cols }) }}
       </span>
@@ -476,81 +713,26 @@ const shortcuts = computed(() => [
       @save-default="onLayoutSaveDefault"
     />
 
-    <GridImportDialog v-model:open="importOpen" :report="importReport" @parsed="onParsed" />
+    <ImportReportDialog v-model:open="reportOpen" :report="importReport" />
+
+    <LanguageRadialMenu
+      :open="ring.open"
+      :x="ring.x"
+      :y="ring.y"
+      @select="onRingSelect"
+      @close="ring.open = false"
+    />
+
+    <input
+      ref="fileInput"
+      type="file"
+      class="hidden-file-input"
+      accept=".csv,.xlsx,.xls,.txt"
+      @change="onFilePicked"
+    />
   </div>
 </template>
 
-<style scoped>
-.product-grid-page {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-  overflow: hidden;
-  box-sizing: border-box;
-}
-
-.page-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
-}
-
-.page-title {
-  margin: 0 0 4px;
-  font-size: 20px;
-  font-weight: 600;
-}
-
-.page-desc {
-  margin: 0;
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
-}
-
-.grid-alert {
-  margin-bottom: 8px;
-}
-
-.grid-region {
-  flex: 1;
-  min-height: 0;
-  outline: none;
-}
-
-.grid-footnote {
-  margin: 6px 0 0;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-}
-
-.grid-footnote__selection {
-  color: var(--accent);
-}
-
-.shortcut-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 12px;
-}
-
-.shortcut-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.shortcut-row kbd {
-  flex: 0 0 118px;
-  font-family: var(--el-font-family-mono, monospace);
-  background: var(--el-fill-color-light);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 3px;
-  padding: 1px 4px;
-  font-size: 11px;
-  text-align: center;
-}
+<style scoped lang="scss">
+@use '../styles/components/views/product-grid.scss' as *;
 </style>

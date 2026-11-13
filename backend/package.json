@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "npx tsx watch src/server.ts",
     "build": "tsc",
-    "test": "tsx --test tests/parser.test.ts",
+    "test": "tsx --test tests/parser.test.ts tests/listingLanguage.test.ts",
     "start": "node dist/server.js",
     "deploy": "npx wrangler deploy",
     "dev:worker": "npx wrangler dev"

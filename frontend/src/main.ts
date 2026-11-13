@@ -3,17 +3,18 @@ import { createPinia } from 'pinia'
 import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
-import './styles/element-override.css'
+import './styles/element-override.scss'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 
 import App from './App.vue'
 import router from './router'
 import i18n from './locales'
+import { tooltip } from './directives/tooltip'
 import { useUiStore } from './stores/uiStore'
 import { reportClientError, setupErrorMonitoring } from './utils/errorReporter'
-import './styles/theme.css'
-import './styles/global.css'
-import './styles/transitions.css'
+import './styles/theme.scss'
+import './styles/global.scss'
+import './styles/transitions.scss'
 
 const app = createApp(App)
 
@@ -29,6 +30,7 @@ if (!useUiStore().isDark) {
 app.use(router)
 app.use(i18n)
 app.use(ElementPlus)
+app.directive('tooltip', tooltip)
 
 for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
   app.component(key, component)

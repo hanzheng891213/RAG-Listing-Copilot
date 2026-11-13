@@ -1,57 +1,227 @@
 <script setup lang="ts">
-import { ref, computed, nextTick, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { marked } from 'marked'
 import { useChatStore } from '@/stores/chatStore'
 import { useListingStore } from '@/stores/listingStore'
+import { useModelStore } from '@/stores/modelStore'
+import { applyListingDirection } from '@/api/chat'
 import type { GeneratedListing } from '@/types/listing'
 import ConfirmButton from '@/components/common/ConfirmButton.vue'
+
+/**
+ * The optimisation copilot panel.
+ *
+ * Chat answers stream in as markdown; "apply" is a separate structured call:
+ * the prose answer is only context, the endpoint rewrites the listing into a
+ * JSON patch, and the patch is merged into the active listing (then the parent
+ * writes it back into the 上架表 row).
+ */
+const emit = defineEmits<{
+  (e: 'applied', payload: { listing: GeneratedListing; fields: string[] }): void
+}>()
 
 const { t } = useI18n()
 const store = useListingStore()
 const chat = useChatStore()
+const modelStore = useModelStore()
+
 const input = ref('')
 const chatBody = ref<HTMLElement | null>(null)
+const inputEl = ref<HTMLTextAreaElement | null>(null)
 const showAddPreset = ref(false)
 const newPreset = ref('')
+const composerFocused = ref(false)
+const stickToBottom = ref(true)
+const applyingIndex = ref<number | null>(null)
+/** Applied-field badges are per listing thread, not per message index globally. */
+const appliedByListing = ref<Record<string, Record<number, string[]>>>({})
+const activeListingId = computed(() => store.activeListing?.id ?? '')
 
-const defaultPresetKeys = ['chat.presets.engaging', 'chat.presets.shorten', 'chat.presets.compliance', 'chat.presets.keywords', 'chat.presets.seo', 'chat.presets.professional', 'chat.presets.eco']
+function appliedFieldsFor(index: number): string[] | undefined {
+  return appliedByListing.value[activeListingId.value]?.[index]
+}
 
-const allPresets = computed(() => [...defaultPresetKeys.map(k => t(k)), ...chat.customPresets])
+function markApplied(index: number, fields: string[]): void {
+  const id = activeListingId.value
+  if (!id) return
+  appliedByListing.value = {
+    ...appliedByListing.value,
+    [id]: { ...(appliedByListing.value[id] ?? {}), [index]: fields },
+  }
+}
 
-function scrollToBottom() {
+const defaultPresetKeys = [
+  'chat.presets.engaging',
+  'chat.presets.shorten',
+  'chat.presets.compliance',
+  'chat.presets.keywords',
+  'chat.presets.seo',
+  'chat.presets.professional',
+  'chat.presets.eco',
+]
+
+const allPresets = computed(() => [
+  ...defaultPresetKeys.map((key) => t(key)),
+  ...chat.customPresets,
+])
+
+const activeListingTitle = computed(() => {
+  const title = store.activeListing?.title?.trim()
+  return title || t('chat.untitledListing')
+})
+
+const lastIndex = computed(() => chat.messages.length - 1)
+
+function directionFor(index: number): string {
+  for (let i = index - 1; i >= 0; i--) {
+    const candidate = chat.messages[i]
+    if (candidate?.role === 'user' && candidate.content.trim()) return candidate.content
+  }
+  return ''
+}
+
+function isThinking(index: number): boolean {
+  const message = chat.messages[index]
+  return (
+    chat.isLoading &&
+    index === lastIndex.value &&
+    message?.role === 'assistant' &&
+    message.content.length === 0
+  )
+}
+
+function isStreamingMessage(index: number): boolean {
+  const message = chat.messages[index]
+  return (
+    chat.isStreaming &&
+    index === lastIndex.value &&
+    message?.role === 'assistant' &&
+    message.content.length > 0
+  )
+}
+
+function isAssistant(index: number): boolean {
+  return chat.messages[index]?.role === 'assistant'
+}
+
+function canApply(index: number): boolean {
+  const message = chat.messages[index]
+  return Boolean(
+    message &&
+      message.role === 'assistant' &&
+      message.content.trim() &&
+      !message.content.startsWith('Error:') &&
+      store.activeListing &&
+      !isStreamingMessage(index) &&
+      !isThinking(index),
+  )
+}
+
+function renderMarkdown(content: string): string {
+  // The assistant is allowed to emit markdown but never raw HTML: escape tags
+  // before parsing so an echoed product description cannot inject markup.
+  const safe = String(content ?? '').replace(/</g, '&lt;')
+  return marked.parse(safe, { gfm: true, breaks: true }) as string
+}
+
+function fieldLabel(field: string): string {
+  return t(`chat.fields.${field}`)
+}
+
+function onBodyScroll(): void {
+  const el = chatBody.value
+  if (!el) return
+  stickToBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < 90
+}
+
+function scrollToBottom(force = false): void {
+  if (!force && !stickToBottom.value) return
   nextTick(() => {
-    if (chatBody.value) {
-      chatBody.value.scrollTop = chatBody.value.scrollHeight
-    }
+    const el = chatBody.value
+    if (!el) return
+    el.scrollTop = el.scrollHeight
   })
 }
 
-function onPresetClick(text: string) {
+function onPresetClick(text: string): void {
   input.value = text
+  inputEl.value?.focus()
 }
 
-async function onSend() {
+async function onSend(): Promise<void> {
   const text = input.value.trim()
   if (!text || chat.isLoading) return
   input.value = ''
+  stickToBottom.value = true
 
   const context: GeneratedListing | undefined = store.activeListing ?? undefined
-  await chat.sendMessage(text, context)
-  scrollToBottom()
+  void chat.sendMessage(text, context)
+  scrollToBottom(true)
 }
 
-function onApply(text: string) {
-  // Parse AI reply for listing fields to update
-  // For now, notify via the store that we have a suggestion
-  chat.messages.push({
-    role: 'assistant',
-    content: `[Applied] ${t('chat.applied')}`,
-  })
-  scrollToBottom()
+async function onCopy(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text)
+    ElMessage.success(t('chat.copied'))
+  } catch {
+    ElMessage.warning(t('chat.copyFailed'))
+  }
 }
 
-function onAddPreset() {
+async function onApply(index: number): Promise<void> {
+  if (applyingIndex.value !== null || !canApply(index)) return
+  const message = chat.messages[index]
+  const listing = store.activeListing
+  if (!listing) {
+    ElMessage.warning(t('chat.needListing'))
+    return
+  }
+
+  const cfg = modelStore.activeConfig
+  if (!cfg?.apiKey) {
+    ElMessage.warning(t('chat.needModel'))
+    return
+  }
+
+  applyingIndex.value = index
+  try {
+    const direction = directionFor(index) || t('chat.defaultDirection')
+    const { patch } = await applyListingDirection({
+      direction,
+      suggestion: message.content,
+      listing,
+      providerId: cfg.providerId,
+      apiKey: cfg.apiKey,
+      model: cfg.activeModel,
+      maxTokens: cfg.maxTokens,
+    })
+
+    const fields = store.applyPatch(patch ?? {})
+    if (fields.length === 0) {
+      ElMessage.info(t('chat.noChanges'))
+      return
+    }
+
+    markApplied(index, fields)
+    const labels = fields.map(fieldLabel).join(' · ')
+    ElMessage.success(t('chat.appliedNow', { fields: labels }))
+    if (store.activeListing) {
+      emit('applied', { listing: store.activeListing, fields })
+    }
+    scrollToBottom(true)
+  } catch (err) {
+    const error = err as { response?: { data?: { error?: string } }; message?: string }
+    const detail = error?.response?.data?.error || error?.message || ''
+    console.error('[Chat] apply failed:', err)
+    ElMessage.error(`${t('chat.applyFailed')}${detail ? `：${detail}` : ''}`)
+  } finally {
+    applyingIndex.value = null
+  }
+}
+
+function onAddPreset(): void {
   const text = newPreset.value.trim()
   if (!text) return
   chat.addPreset(text)
@@ -59,83 +229,237 @@ function onAddPreset() {
   showAddPreset.value = false
 }
 
-function onRemovePreset(index: number) {
-  ElMessageBox.confirm(t('chat.confirmRemovePreset'), t('common.confirmTitle'), {
-    confirmButtonText: t('common.confirm'),
-    cancelButtonText: t('common.cancel'),
-    type: 'warning',
-    draggable: true,
-  }).then(() => {
+async function onRemovePreset(index: number): Promise<void> {
+  const { ElMessageBox } = await import('element-plus')
+  try {
+    await ElMessageBox.confirm(t('chat.confirmRemovePreset'), t('common.confirmTitle'), {
+      confirmButtonText: t('common.confirm'),
+      cancelButtonText: t('common.cancel'),
+      type: 'warning',
+      draggable: true,
+    })
     chat.removePreset(index)
-  }).catch(() => {})
-}
-
-function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault()
-    onSend()
+  } catch {
+    // cancelled
   }
 }
 
-watch(() => store.activeListing, () => {
-  if (store.activeListing) {
-    chat.clearMessages()
-  }
-})
+function onKeydown(event: KeyboardEvent): void {
+  if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return
+  event.preventDefault()
+  if (!chat.isLoading) void onSend()
+}
 
-// Auto-scroll as streaming content arrives
-watch(() => chat.messages[chat.messages.length - 1]?.content, () => {
-  if (chat.isStreaming) scrollToBottom()
-})
+// Switching product tabs is switching conversations. The thread for the listing
+// being left is saved, and the one being opened is restored. Applying a patch
+// keeps the same listing id, so it must keep the thread and the badges intact.
+watch(
+  () => store.activeListing?.id ?? '',
+  (id) => {
+    // An answer in flight belongs to the old listing; never append it to the new.
+    chat.stopStreaming()
+    chat.useThread(id)
+  },
+  { immediate: true },
+)
+
+watch(
+  () => chat.messages.length,
+  (length) => {
+    // Clearing via the header must also drop the per-message "applied" badges,
+    // otherwise a fresh reply that reuses an index would inherit one.
+    if (length === 0 && activeListingId.value) {
+      const next = { ...appliedByListing.value }
+      delete next[activeListingId.value]
+      appliedByListing.value = next
+    }
+    scrollToBottom(true)
+  },
+)
+watch(
+  () => chat.messages[chat.messages.length - 1]?.content,
+  () => scrollToBottom(),
+)
 </script>
 
 <template>
   <div class="chat-panel">
-    <div class="chat-header">
-      <span class="chat-title">{{ t("chat.title") }}</span>
-      <ConfirmButton
-        size="small"
-        text
-        type="danger"
-        :confirm-title="t('common.confirmTitle')"
-        :confirm-message="t('chat.confirmClear')"
-        :disabled="chat.messages.length === 0"
-        @click="chat.clearMessages()"
-      >
-        {{ t('chat.clear') }}
-      </ConfirmButton>
-    </div>
-
-    <div ref="chatBody" class="chat-body">
-      <div v-if="chat.messages.length === 0" class="chat-empty">
-        <p>{{ t("chat.empty") }}</p>
-      </div>
-
-      <div
-        v-for="(msg, i) in chat.messages"
-        :key="i"
-        :class="['chat-msg', msg.role === 'user' ? 'msg-user' : 'msg-assistant']"
-      >
-        <div class="msg-content">{{ msg.content }}</div>
-        <div v-if="msg.role === 'assistant' && !msg.content.startsWith('Error:')" class="msg-actions">
-          <el-button size="small" text type="primary" @click="onApply(msg.content)">
-            {{ t('chat.apply') }}
-          </el-button>
+    <!-- Header: identity + model + clear -->
+    <header class="chat-head">
+      <div class="chat-ident">
+        <div class="ai-orb" :class="{ 'is-live': chat.isStreaming || chat.isLoading }">
+          <el-icon><MagicStick /></el-icon>
+        </div>
+        <div class="chat-ident-text">
+          <div class="chat-title-row">
+            <span class="chat-title">{{ t('chat.title') }}</span>
+            <span class="chat-badge">RAG</span>
+          </div>
+          <span class="chat-subtitle">{{ t('chat.subtitle') }}</span>
         </div>
       </div>
 
-      <div v-if="chat.isLoading && !chat.isStreaming" class="chat-loading">
-        <span class="dot-pulse" />
-        <span>{{ t("chat.thinking") }}</span>
+      <div class="chat-head-actions">
+        <el-dropdown
+          v-if="modelStore.configuredProviders.length > 0"
+          trigger="click"
+          placement="bottom-end"
+          @command="modelStore.setActiveProvider"
+        >
+          <button
+            type="button"
+            class="model-pill"
+            :aria-label="modelStore.activeModelName || modelStore.activeConfig?.activeModel"
+            v-tooltip="modelStore.activeModelName || modelStore.activeConfig?.activeModel || ''"
+          >
+            <el-icon><Cpu /></el-icon>
+            <span class="model-live-dot" />
+          </button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item
+                v-for="cfg in modelStore.configuredProviders"
+                :key="cfg.providerId"
+                :command="cfg.providerId"
+                :class="{ 'is-active-model': cfg.providerId === modelStore.activeProviderId }"
+              >
+                <span class="model-option">
+                  <el-icon v-if="cfg.providerId === modelStore.activeProviderId"><Check /></el-icon>
+                  <span>{{ modelStore.providers.find((p) => p.id === cfg.providerId)?.name || cfg.providerId }}</span>
+                  <span class="model-option__id">{{ cfg.activeModel }}</span>
+                </span>
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+
+        <span v-tooltip="t('chat.clear')">
+          <ConfirmButton
+            size="small"
+            text
+            type="danger"
+            :confirm-title="t('common.confirmTitle')"
+            :confirm-message="t('chat.confirmClear')"
+            :disabled="chat.messages.length === 0"
+            @click="chat.clearMessages()"
+          >
+            <el-icon><Delete /></el-icon>
+          </ConfirmButton>
+        </span>
       </div>
+    </header>
+
+    <!-- Current listing context -->
+    <div v-if="store.activeListing" class="context-strip">
+      <span class="context-dot" />
+      <span class="context-label">{{ t('chat.context') }}</span>
+      <span class="context-title" :title="activeListingTitle">{{ activeListingTitle }}</span>
+      <span class="context-version">v{{ store.activeListing.version }}</span>
+    </div>
+    <div v-else class="context-strip is-empty">
+      <span class="context-dot" />
+      <span class="context-label">{{ t('chat.noListingContext') }}</span>
     </div>
 
-    <!-- Quick presets -->
-    <div class="presets-area">
-      <div class="presets-header">
-        <span class="presets-label">{{ t("chat.quickPrompts") }}</span>
-        <el-button size="small" text @click="showAddPreset = !showAddPreset">+</el-button>
+    <div ref="chatBody" class="chat-body" @scroll.passive="onBodyScroll">
+      <!-- Empty state -->
+      <div v-if="chat.messages.length === 0" class="chat-empty">
+        <div class="empty-orb">
+          <el-icon><ChatDotRound /></el-icon>
+        </div>
+        <h4 class="empty-title">{{ t('chat.emptyTitle') }}</h4>
+        <p class="empty-desc">{{ t('chat.empty') }}</p>
+        <div class="empty-hints">
+          <button
+            v-for="preset in allPresets.slice(0, 3)"
+            :key="preset"
+            type="button"
+            class="empty-hint"
+            @click="onPresetClick(preset)"
+          >
+            <el-icon><Promotion /></el-icon>
+            <span>{{ preset }}</span>
+          </button>
+        </div>
       </div>
+
+      <TransitionGroup name="msg" tag="div" class="chat-stream">
+        <div
+          v-for="(msg, index) in chat.messages"
+          :key="index"
+          class="chat-msg"
+          :class="msg.role === 'user' ? 'msg-user' : 'msg-assistant'"
+        >
+          <div class="msg-avatar">
+            <el-icon v-if="msg.role === 'user'"><User /></el-icon>
+            <el-icon v-else><MagicStick /></el-icon>
+          </div>
+
+          <div class="msg-body">
+            <div class="bubble" :class="{ 'is-streaming': isStreamingMessage(index) }">
+              <div v-if="isThinking(index)" class="typing-dots" aria-label="streaming">
+                <span /><span /><span />
+              </div>
+              <template v-else-if="msg.role === 'assistant'">
+                <div class="bubble-text markdown-body" v-html="renderMarkdown(msg.content)" />
+                <span v-if="isStreamingMessage(index)" class="stream-caret" />
+              </template>
+              <p v-else class="bubble-text">{{ msg.content }}</p>
+            </div>
+
+            <div v-if="isAssistant(index) && !isThinking(index)" class="msg-meta">
+              <span v-if="isStreamingMessage(index)" class="streaming-tag">
+                <i class="streaming-dot" />
+                {{ t('chat.streaming') }}
+              </span>
+              <span v-else class="msg-role">{{ t('chat.assistantName') }}</span>
+
+              <div class="msg-tools">
+                <button
+                  type="button"
+                  class="tool-btn"
+                  :title="t('chat.copy')"
+                  :disabled="!msg.content"
+                  @click="onCopy(msg.content)"
+                >
+                  <el-icon><CopyDocument /></el-icon>
+                </button>
+                <button
+                  type="button"
+                  class="apply-btn"
+                  :disabled="!canApply(index) || applyingIndex !== null"
+                  :title="store.activeListing ? t('chat.applyHint') : t('chat.needListing')"
+                  @click="onApply(index)"
+                >
+                  <el-icon v-if="applyingIndex === index" class="is-loading"><Loading /></el-icon>
+                  <el-icon v-else><Promotion /></el-icon>
+                  <span>{{ applyingIndex === index ? t('chat.applying') : t('chat.apply') }}</span>
+                </button>
+              </div>
+            </div>
+
+            <div v-if="appliedFieldsFor(index)" class="applied-note">
+              <el-icon><CircleCheckFilled /></el-icon>
+              <span>{{ t('chat.appliedTo', { fields: appliedFieldsFor(index)?.map(fieldLabel).join(' · ') }) }}</span>
+            </div>
+          </div>
+        </div>
+      </TransitionGroup>
+    </div>
+
+    <!-- Quick presets (the empty state surfaces a first subset, so the full
+         strip only appears once a conversation exists) -->
+    <div v-if="chat.messages.length > 0" class="presets-area">
+      <div class="presets-header">
+        <span class="presets-label">
+          <el-icon><Sunny /></el-icon>
+          {{ t('chat.quickPrompts') }}
+        </span>
+        <button type="button" class="presets-add" @click="showAddPreset = !showAddPreset">
+          {{ showAddPreset ? '−' : '+' }}
+        </button>
+      </div>
+
       <div v-if="showAddPreset" class="preset-add">
         <el-input
           v-model="newPreset"
@@ -144,200 +468,72 @@ watch(() => chat.messages[chat.messages.length - 1]?.content, () => {
           @keydown.enter="onAddPreset"
         >
           <template #append>
-            <el-button @click="onAddPreset" size="small">{{ t('chat.addPreset') }}</el-button>
+            <el-button size="small" @click="onAddPreset">{{ t('chat.addPreset') }}</el-button>
           </template>
         </el-input>
       </div>
-      <div class="presets-list">
-        <span
-          v-for="(p, pi) in allPresets"
-          :key="pi"
+
+      <div class="presets-scroll">
+        <button
+          v-for="(preset, presetIndex) in allPresets"
+          :key="presetIndex"
+          type="button"
           class="preset-chip"
-          @click="onPresetClick(p)"
+          @click="onPresetClick(preset)"
         >
-          {{ p }}
+          <span class="preset-text">{{ preset }}</span>
           <span
-            v-if="pi >= defaultPresetKeys.length"
+            v-if="presetIndex >= defaultPresetKeys.length"
             class="preset-remove"
-            @click.stop="onRemovePreset(pi - defaultPresetKeys.length)"
+            role="button"
+            tabindex="0"
+            @click.stop="onRemovePreset(presetIndex - defaultPresetKeys.length)"
           >&times;</span>
-        </span>
+        </button>
       </div>
     </div>
 
-    <!-- Input -->
-    <div class="chat-input-area">
-      <el-input
-        v-model="input"
-        type="textarea"
-        :rows="2"
-        :placeholder="t('chat.inputPlaceholder')"
-        @keydown="onKeydown"
-        resize="none"
-      />
-      <el-button
-        type="primary"
-        size="small"
-        :disabled="!input.trim() || chat.isLoading"
-        @click="onSend"
-        class="send-btn"
-      >
-        {{ t('chat.send') }}
-      </el-button>
-    </div>
+    <!-- Composer -->
+    <footer class="chat-composer">
+      <div class="composer-box" :class="{ 'is-focused': composerFocused }">
+        <textarea
+          ref="inputEl"
+          v-model="input"
+          class="composer-input"
+          rows="2"
+          :placeholder="t('chat.inputPlaceholder')"
+          @focus="composerFocused = true"
+          @blur="composerFocused = false"
+          @keydown="onKeydown"
+        />
+        <div class="composer-bar">
+          <span class="composer-hint">{{ t('chat.sendHint') }}</span>
+          <button
+            v-if="chat.isLoading"
+            type="button"
+            class="stop-btn"
+            @click="chat.stopStreaming()"
+          >
+            <span class="stop-square" />
+            {{ t('chat.stop') }}
+          </button>
+          <button
+            v-else
+            type="button"
+            class="send-btn"
+            :disabled="!input.trim()"
+            @click="onSend"
+          >
+            <el-icon><Promotion /></el-icon>
+            {{ t('chat.send') }}
+          </button>
+        </div>
+      </div>
+      <p v-if="chat.error" class="composer-error">{{ chat.error }}</p>
+    </footer>
   </div>
 </template>
 
-<style scoped>
-.chat-panel {
-  display: flex;
-  flex-direction: column;
-  height: 480px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  background: var(--bg-card);
-  margin-top: 12px;
-}
-.chat-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border-color);
-  gap: 8px;
-}
-.chat-title {
-  font-weight: 500;
-  font-size: 14px;
-  color: var(--text-primary);
-  white-space: nowrap;
-}
-.chat-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.chat-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  color: var(--text-muted);
-  font-size: 13px;
-  text-align: center;
-  padding: 20px;
-}
-.chat-msg {
-  max-width: 90%;
-  padding: 8px 12px;
-  border-radius: var(--radius-md);
-  font-size: 13px;
-  line-height: 1.5;
-}
-.msg-user {
-  align-self: flex-end;
-  background: var(--accent);
-  color: #fff;
-}
-.msg-assistant {
-  align-self: flex-start;
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-}
-.msg-content {
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.msg-actions {
-  margin-top: 4px;
-  display: flex;
-  gap: 6px;
-}
-.chat-loading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--text-muted);
-  font-size: 13px;
-  padding: 4px 0;
-}
-.dot-pulse {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--accent);
-  animation: dot-pulse 1s ease-in-out infinite;
-}
-@keyframes dot-pulse {
-  0%, 100% { opacity: 0.3; }
-  50% { opacity: 1; }
-}
-.presets-area {
-  padding: 8px 14px;
-  border-top: 1px solid var(--border-color);
-}
-.presets-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 6px;
-}
-.presets-label {
-  font-size: 11px;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-.preset-add {
-  margin-bottom: 6px;
-}
-.presets-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  max-height: 80px;
-  overflow-y: auto;
-}
-.preset-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 2px 8px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  font-size: 11px;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 0.15s;
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.preset-chip:hover {
-  background: var(--accent);
-  color: #fff;
-  border-color: var(--accent);
-}
-.preset-remove {
-  font-size: 14px;
-  font-weight: bold;
-  opacity: 0.5;
-}
-.preset-remove:hover { opacity: 1; }
-.chat-input-area {
-  padding: 8px 14px;
-  border-top: 1px solid var(--border-color);
-  display: flex;
-  gap: 8px;
-  align-items: flex-end;
-}
-.send-btn {
-  flex-shrink: 0;
-  margin-bottom: 2px;
-}
+<style scoped lang="scss">
+@use '../../styles/components/listing/chat-panel.scss' as *;
 </style>

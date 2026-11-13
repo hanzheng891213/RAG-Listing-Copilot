@@ -1,0 +1,567 @@
+@use '../../table/tokens' as table;
+
+/* ============================================================================
+   Excel grid — 表格颜色全部来自 --table-*（见 styles/table/_tokens.scss）。
+   The grid is a light sheet in both app themes; do not replace these with the
+   global --bg/--text tokens, that is what made the table drift before.
+   ========================================================================== */
+.xgrid {
+  --table-surface: #{table.$surface};
+  --table-surface-alt: #{table.$surface-alt};
+  --table-surface-stripe: #{table.$surface-stripe};
+  --table-surface-header: #{table.$surface-header};
+  --table-surface-header-alt: #{table.$surface-header-alt};
+  --table-surface-hover: #{table.$surface-hover};
+  --table-surface-selected: #{table.$surface-selected};
+
+  --table-grid-line: #{table.$grid-line};
+  --table-border: #{table.$border-strong};
+
+  --table-text: #{table.$text};
+  --table-text-head: #{table.$text-head};
+  --table-text-muted: #{table.$text-muted};
+  --table-text-draft: #{table.$text-draft};
+
+  --table-accent: #{table.$accent};
+  --table-accent-strong: #{table.$accent-strong};
+  --table-accent-soft: #{table.$accent-soft};
+  --table-danger-surface: #{table.$danger-surface};
+  --table-danger-border: #{table.$danger-border};
+  --table-selection-inner: #{table.$selection-inner};
+
+  --table-action-icon: #{table.$action-icon};
+  --table-action-save: #{table.$action-save};
+  --table-action-save-hover: #{table.$action-save-hover};
+  --table-action-generate: #{table.$action-generate};
+  --table-action-generate-hover: #{table.$action-generate-hover};
+  --table-action-delete: #{table.$action-delete};
+  --table-action-delete-hover: #{table.$action-delete-hover};
+
+  --table-scroll-track: #{table.$scroll-track};
+  --table-scroll-thumb: #{table.$scroll-thumb};
+}
+
+.xgrid {
+  position: relative;
+  width: 100%;
+  border: 1px solid var(--table-border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--table-surface);
+  user-select: none;
+}
+
+.xgrid__viewport {
+  position: absolute;
+  inset: 0 10px 10px 0;
+  overflow: auto;
+  /* The external tracks are the visible scrollbars; the native ones must not
+     compete with them or two drivers end up fighting over scrollTop. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.xgrid__viewport::-webkit-scrollbar {
+  display: none;
+}
+
+.xgrid__canvas {
+  position: relative;
+  min-width: 100%;
+}
+
+.xgrid__head {
+  position: sticky;
+  top: 0;
+  /* Must outrank every row cell: the action rail is z-index 3, so a lower
+     header layer would let its buttons paint over the fixed header as rows
+     scroll underneath it. */
+  z-index: 20;
+  display: flex;
+  background: var(--table-surface-header);
+  border-bottom: 1px solid var(--table-border);
+  box-sizing: border-box;
+}
+
+.xhead {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  height: 100%;
+  box-sizing: border-box;
+  border-right: 1px solid var(--table-grid-line);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--table-text-head);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: var(--table-surface-header);
+}
+
+.xhead--rownum,
+.xcell--rownum {
+  justify-content: center;
+  padding: 0;
+  color: var(--table-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The row-number column is the first frozen slot. `.xcell` below sets
+   position: relative, so the horizontal sticky has to be re-declared with a
+   higher-specificity selector in the theme block as well; without it the
+   gutter scrolls away and the frozen data columns keep a 56px gap. */
+.xhead--rownum {
+  position: sticky;
+  left: 0;
+  z-index: 6;
+}
+
+.xcell--rownum {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+}
+
+/* Both axes on one element: vertical for the header, horizontal for freeze. */
+.xhead--frozen {
+  position: sticky;
+  z-index: 5;
+}
+
+.xgrid__row {
+  display: flex;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--table-grid-line);
+  background: var(--table-surface);
+}
+
+.xgrid__row--alt {
+  background: var(--table-surface);
+}
+
+.xgrid__row--readonly {
+  color: var(--table-text-muted);
+}
+
+.xgrid__row--draft {
+  font-style: italic;
+}
+
+.xgrid__row--draft .xcell__text {
+  color: var(--table-text-draft);
+}
+
+.xcell {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  box-sizing: border-box;
+  border-right: 1px solid var(--table-grid-line);
+  font-size: 12px;
+  line-height: 28px;
+  white-space: nowrap;
+  overflow: hidden;
+  position: relative;
+  /* Inherit the row background so frozen cells stay opaque while scrolling and
+     still follow zebra/hover states. */
+  background: inherit;
+}
+
+.xcell--frozen {
+  position: sticky;
+  z-index: 2;
+  box-shadow: 1px 0 0 var(--table-grid-line);
+}
+
+/* Right-frozen columns part from the scrollable middle on their left edge. */
+.xhead--frozen-right,
+.xcell--frozen-right {
+  box-shadow: -1px 0 0 var(--table-grid-line);
+}
+
+.xcell--numeric {
+  justify-content: flex-end;
+}
+
+/* ── Frozen action rail ──────────────────────────────────────────────── */
+.xhead--actions,
+.xcell--actions {
+  position: sticky;
+  right: 0;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 6px;
+}
+
+.xhead--actions {
+  z-index: 7;
+}
+
+.xcell--actions {
+  /* Above frozen data columns (2), below the sticky header (20). */
+  z-index: 3;
+  box-shadow: -1px 0 0 var(--table-grid-line);
+}
+
+.xact {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--table-action-icon);
+  font-size: 14px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, opacity 0.12s ease;
+}
+
+.xact .el-icon {
+  font-size: 14px;
+}
+
+/* Action rail colours are table tokens too: see table/_tokens.scss. */
+.xact--save {
+  background: var(--table-action-save);
+  border-color: var(--table-action-save);
+}
+
+.xact--save:hover:not(:disabled) {
+  background: var(--table-action-save-hover);
+  border-color: var(--table-action-save-hover);
+}
+
+.xact--generate {
+  background: var(--table-action-generate);
+  border-color: var(--table-action-generate);
+}
+
+.xact--generate:hover:not(:disabled) {
+  background: var(--table-action-generate-hover);
+  border-color: var(--table-action-generate-hover);
+}
+
+.xact--delete {
+  background: var(--table-action-delete);
+  border-color: var(--table-action-delete);
+}
+
+.xact--delete:hover:not(:disabled) {
+  background: var(--table-action-delete-hover);
+  border-color: var(--table-action-delete-hover);
+}
+
+.xact:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.xact__spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: xgrid-spin 0.7s linear infinite;
+}
+
+.xcell--selected {
+  box-shadow: inset 0 0 0 2px var(--table-accent);
+  background: var(--table-surface-selected);
+  /* Below frozen cells (2) and the row-number gutter (2): a selected cell that
+     scrolls sideways must slide under the frozen columns, not paint over them. */
+  z-index: 1;
+}
+
+.xcell--error {
+  background: var(--table-danger-surface);
+  box-shadow: inset 0 0 0 1px var(--table-danger-border);
+}
+
+.xcell__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.xcell__editor {
+  width: 100%;
+  height: 24px;
+  border: 1px solid var(--table-accent);
+  border-radius: 2px;
+  padding: 0 6px;
+  font-size: 12px;
+  outline: none;
+  background: var(--table-surface);
+  color: var(--table-text);
+}
+
+.xcell__draft-mark {
+  color: var(--table-accent);
+}
+
+.xcell__spinner {
+  position: absolute;
+  right: 4px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--table-accent-soft);
+  border-top-color: var(--table-accent);
+  border-radius: 50%;
+  animation: xgrid-spin 0.7s linear infinite;
+}
+
+@keyframes xgrid-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 6s bulk-write heartbeat: opacity only, on a pseudo element, so it stays on
+   the compositor and never triggers a repaint of the row. */
+.xgrid__row--pulse {
+  position: relative;
+}
+
+.xgrid__row--pulse::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--table-surface-selected);
+  opacity: 0;
+  will-change: opacity;
+  animation: xgrid-pulse 6s ease-out forwards;
+}
+
+@keyframes xgrid-pulse {
+  0% {
+    opacity: 0.55;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.xgrid__row--saving .xcell {
+  opacity: 0.7;
+}
+
+.xgrid__sb {
+  position: absolute;
+  z-index: 10;
+  background: var(--table-surface-alt);
+  border-radius: 5px;
+}
+
+.xgrid__sb--v {
+  top: 0;
+  right: 0;
+  width: 9px;
+  bottom: 10px;
+}
+
+.xgrid__sb--h {
+  left: 0;
+  right: 10px;
+  bottom: 0;
+  height: 9px;
+}
+
+.xgrid__sb.is-idle {
+  opacity: 0.35;
+}
+
+.xgrid__sb.is-idle .xgrid__thumb {
+  cursor: default;
+}
+
+.xgrid__thumb {
+  position: absolute;
+  background: var(--table-scroll-thumb);
+  border-radius: 5px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.xgrid__sb--v .xgrid__thumb {
+  left: 1px;
+  right: 1px;
+  top: 0;
+}
+
+.xgrid__sb--h .xgrid__thumb {
+  top: 1px;
+  bottom: 1px;
+  left: 0;
+}
+
+.xgrid__thumb:active {
+  cursor: grabbing;
+}
+
+/* ── Table surface states ──────────────────────────────────────────
+   White / pale-green stripes, then hover, selection and error states.
+   Cell borders use --table-grid-line: a dark grey, not the app border. */
+
+/* Header: green-tinted, opaque so the virtual rows scroll underneath it. */
+.xgrid__head {
+  background: var(--table-surface-header);
+  border-bottom: 1px solid var(--table-border);
+}
+
+.xhead {
+  background: var(--table-surface-header);
+  border-right-color: var(--table-grid-line);
+  color: var(--table-text-head);
+}
+
+.xhead--rownum {
+  background: var(--table-surface-header-alt);
+  color: var(--table-text-muted);
+}
+
+/* Rows: white / pale green stripes, then hover, then selection. */
+.xgrid__row {
+  background: var(--table-surface);
+  border-bottom-color: var(--table-grid-line);
+  color: var(--table-text);
+}
+
+.xgrid__row--alt {
+  background: var(--table-surface-stripe);
+}
+
+.xgrid__row:hover {
+  background: var(--table-surface-hover);
+}
+
+.xgrid__row--readonly {
+  color: var(--table-text-muted);
+}
+
+.xgrid__row--draft {
+  background: var(--table-surface-alt);
+}
+
+.xgrid__row--alt.xgrid__row--draft {
+  background: var(--table-surface-stripe);
+}
+
+.xgrid__row--draft .xcell__text {
+  color: var(--table-text-draft);
+}
+
+.xcell {
+  border-right-color: var(--table-grid-line);
+  color: inherit;
+  cursor: cell;
+}
+
+.xgrid__row .xcell--rownum {
+  /* Re-declared here (higher specificity than `.xcell`) so the gutter really is
+     the first frozen column and not just styled like one. */
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--table-surface-header);
+  border-right-color: var(--table-grid-line);
+  color: var(--table-text-muted);
+  cursor: pointer;
+}
+
+.xgrid__row--alt .xcell--rownum {
+  background: var(--table-surface-header-alt);
+}
+
+.xgrid__row .xcell--rownum-selected {
+  background: var(--table-surface-selected);
+  color: var(--table-accent);
+  font-weight: 600;
+}
+
+/* The range is drawn by .xgrid__selection, so cells only carry the fill. */
+.xgrid__row .xcell--selected {
+  background: var(--table-surface-selected);
+  box-shadow: none;
+}
+
+.xcell--error {
+  background: var(--table-danger-surface);
+  box-shadow: inset 0 0 0 1px var(--table-danger-border);
+}
+
+/* Errors must stay visible inside the selection fill. */
+.xgrid__row .xcell--error {
+  background: var(--table-danger-surface);
+  box-shadow: inset 0 0 0 1px var(--table-danger-border);
+}
+
+.xhead--frozen-right,
+.xcell--frozen-right {
+  box-shadow: -1px 0 0 var(--table-grid-line);
+}
+
+/* Action rail keeps the gutter tint so it reads as a control column, not data. */
+.xhead--actions {
+  background: var(--table-surface-header-alt);
+  border-left: 1px solid var(--table-grid-line);
+  color: var(--table-text-head);
+}
+
+.xcell--actions {
+  background: var(--table-surface-header);
+  box-shadow: -1px 0 0 var(--table-grid-line);
+}
+
+.xgrid__row--alt .xcell--actions {
+  background: var(--table-surface-header-alt);
+}
+
+.xgrid__selection {
+  position: absolute;
+  /* Below frozen cells (z-index 2) so a rectangle scrolled under a frozen
+     column is clipped by it instead of drawing on top of its text. */
+  z-index: 1;
+  box-sizing: border-box;
+  border: 2px solid var(--table-accent);
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1px var(--table-selection-inner);
+}
+
+.xcell__editor {
+  background: var(--table-surface);
+  border-color: var(--table-accent);
+  color: var(--table-text);
+}
+
+.xcell__draft-mark {
+  color: var(--table-accent);
+}
+
+.xcell__spinner {
+  border-color: var(--table-grid-line);
+  border-top-color: var(--table-accent);
+}
+
+.xgrid__row--pulse::after {
+  background: color-mix(in srgb, var(--table-accent) 35%, transparent);
+}
+
+.xgrid__sb {
+  background: var(--table-scroll-track);
+}
+
+.xgrid__thumb {
+  background: var(--table-scroll-thumb);
+}

@@ -306,6 +306,7 @@ export class KnowledgeService {
             platform: doc.platform,
             category: doc.category,
             title: doc.title,
+            lang,
           },
         },
         document: this.toKnowledgeDocument(doc),
@@ -319,6 +320,14 @@ export class KnowledgeService {
    * Prompt-ready excerpts of the chunks most relevant to `query`, split into
    * the two roles the generation prompt needs: binding platform regulations and
    * style-reference templates.
+   *
+   * Retrieved chunks are English-first. The generation prompt is authored in
+   * English, and a Chinese rule body embedded in it reads as an instruction to
+   * answer in Chinese — which is how one row in a batch came back translated
+   * while its neighbours did not. Every document is embedded once per language
+   * body it carries, so both spellings normally sit in the same pool and the
+   * English-first pick costs no extra query; the fallback only matters for
+   * vectors indexed before `lang` metadata existed.
    *
    * Retrieval is an enhancement, not a hard dependency: either section comes
    * back empty when there is nothing of that category to retrieve, or when the
@@ -338,8 +347,11 @@ export class KnowledgeService {
 
       // searchKnowledge preserves descending score order, so filtering then
       // slicing keeps the best chunk of each category.
-      const pick = (category: string, limit: number) =>
-        formatChunks(pool.filter((r) => r.chunk.metadata.category === category).slice(0, limit))
+      const pick = (category: string, limit: number) => {
+        const ofCategory = pool.filter((r) => r.chunk.metadata.category === category)
+        const english = ofCategory.filter((r) => r.chunk.metadata.lang === 'en')
+        return formatChunks((english.length > 0 ? english : ofCategory).slice(0, limit))
+      }
 
       return {
         rules: pick(RULE_CATEGORY, DEFAULT_RULE_CHUNKS),

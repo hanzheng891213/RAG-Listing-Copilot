@@ -55,19 +55,19 @@ RAG-listing-copilot/
 │   │   ├── assets/             # 静态资源
 │   │   ├── components/         # 公共组件
 │   │   │   ├── layout/        # 布局组件
-│   │   │   ├── supplier/      # 供应商相关组件
+│   │   │   ├── grid/          # 上架表（ExcelGrid / 工具栏 / 导入报告）
 │   │   │   ├── listing/       # Listing生成组件
 │   │   │   └── knowledge/     # 知识库管理组件
 │   │   ├── composables/       # Composition API逻辑
-│   │   │   ├── useListingGenerator.ts
-│   │   │   ├── useSupplierParser.ts
+│   │   │   ├── useProductGrid.ts / useGridProducts.ts
+│   │   │   ├── useListingGeneration.ts / useListingGenerator.ts
 │   │   │   └── useKnowledgeBase.ts
 │   │   ├── router/            # 路由配置
 │   │   ├── stores/            # Pinia Store
 │   │   ├── styles/            # 全局样式
 │   │   └── views/             # 页面组件
-│   │       ├── Home.vue       # 首页
-│   │       ├── SupplierUpload.vue
+│   │       ├── HomePage.vue   # 首页
+│   │       ├── ProductGrid.vue # 商品上架表（导入 + 编辑 + 行内生成 + 删除）
 │   │       ├── ListingGenerator.vue
 │   │       └── KnowledgeBase.vue
 │   └── vite.config.ts
@@ -88,15 +88,17 @@ RAG-listing-copilot/
 └── shared/                   # 共享代码
     └── types/               # 共享类型定义
 功能模块详细规划
-1. 供应商信息上传模块
+1. 商品上架表（原「供应商信息上传模块」）
+   上传已并入表格页面（/product-grid）：导入按钮或把文件拖进表格即可，导入后立即落库，
+   导入只校验「商品名称 / SKU」是否存在；表格内可直接生成 Listing 并写回该行。
 
 文件上传：支持Excel/CSV/TXT文件上传
 
-表单输入：手动输入商品信息
+表单输入：手动输入商品信息（新增行直接填写）
 
 智能解析：自动提取商品标题、描述、规格、价格等字段
 
-预览编辑：上传后可预览和编辑提取的数据
+预览编辑：导入后在上架表中整块编辑
 
 2. 知识库管理模块
 RAG知识库设计：

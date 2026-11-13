@@ -117,16 +117,6 @@ async function handleSubmit() {
   </el-dialog>
 </template>
 
-<style scoped>
-.upload-form { display: flex; flex-direction: column; gap: 20px; }
-.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-.form-field { display: flex; flex-direction: column; gap: 8px; }
-.form-field label { font-size: 13px; font-weight: 500; color: var(--text-secondary); }
-.tag-input-row { display: flex; gap: 8px; }
-.tag-list { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
-
-@media (max-width: 768px) {
-  .form-row { grid-template-columns: 1fr; }
-  .upload-form { gap: 16px; }
-}
+<style scoped lang="scss">
+@use '../../styles/components/knowledge/document-upload-dialog.scss' as *;
 </style>
