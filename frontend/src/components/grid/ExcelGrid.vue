@@ -61,6 +61,8 @@ const emit = defineEmits<{
   (e: 'activate', payload: { rowId: string; field: string }): void
   (e: 'row-generate', payload: { rowId: string; x: number; y: number }): void
   (e: 'row-delete', payload: { rowId: string }): void
+  /** Double-click on the row-number gutter: open the whole row for inspection. */
+  (e: 'row-open', payload: { rowId: string }): void
 }>()
 
 interface ColumnLayout {
@@ -368,6 +370,9 @@ function isMouseLike(event: PointerEvent): boolean {
 }
 
 function onCellPointerDown(rowId: string, field: string, event: PointerEvent): void {
+  // A cell click between two gutter clicks means the user is not double-clicking
+  // the row number; reset the double-click tracker.
+  lastRowPointer = null
   // Clicking inside the open editor must place the caret, not start a range.
   if ((event.target as HTMLElement | null)?.closest('.xcell__editor')) return
   if (isMouseLike(event)) {
@@ -385,13 +390,33 @@ function onCellPointerDown(rowId: string, field: string, event: PointerEvent): v
   if (isMouseLike(event)) beginSelectionDrag('cell', event)
 }
 
-function onRowPointerDown(rowId: string, event: PointerEvent): void {
+let lastRowPointer: { rowId: string; at: number } | null = null
+
+function onRowPointerDown(rowId: string, index: number, event: PointerEvent): void {
   if (isMouseLike(event)) {
     if (event.button !== 0) return
     event.preventDefault()
   }
   if (editing.value) commitEditing()
   emit('select-row', { rowId, extend: event.shiftKey })
+
+  // The gutter owns the row, so a double click there opens the whole record.
+  // This is detected from pointerdown rather than `dblclick`: the pointerdown
+  // handler calls preventDefault() for text-selection reasons, which suppresses
+  // the compatibility mouse events dblclick would otherwise arrive with.
+  const now = Date.now()
+  const isDouble =
+    !event.shiftKey &&
+    index < props.draftStart &&
+    lastRowPointer?.rowId === rowId &&
+    now - lastRowPointer.at < 350
+  if (isDouble) {
+    lastRowPointer = null
+    emit('row-open', { rowId })
+    return
+  }
+  lastRowPointer = { rowId, at: now }
+
   if (isMouseLike(event)) beginSelectionDrag('row', event)
 }
 
@@ -698,7 +723,8 @@ onBeforeUnmount(() => {
             data-row-head
             :data-row-id="entry.row.id"
             :style="{ width: `${ROW_NUMBER_WIDTH}px`, left: '0px' }"
-            @pointerdown="onRowPointerDown(entry.row.id, $event)"
+            v-tooltip="t('grid.rowNumberHint')"
+            @pointerdown="onRowPointerDown(entry.row.id, entry.index, $event)"
           >
             <span v-if="entry.index < draftStart">{{ entry.index + 1 }}</span>
             <span v-else class="xcell__draft-mark">+</span>

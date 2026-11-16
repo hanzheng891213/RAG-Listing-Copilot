@@ -91,6 +91,19 @@ export function useVirtualList<T>(
     scrollTop.value = 0
   }
 
+  /** Keep a row visible (the active product changes from the list or a batch). */
+  function scrollToIndex(index: number): void {
+    const el = containerRef.value
+    if (!el || index < 0) return
+    const top = index * itemHeight
+    const bottom = top + itemHeight
+    const viewTop = el.scrollTop
+    const viewBottom = viewTop + el.clientHeight
+    if (top >= viewTop && bottom <= viewBottom) return
+    el.scrollTop = Math.max(0, top - Math.max(0, el.clientHeight - itemHeight) / 2)
+    scrollTop.value = el.scrollTop
+  }
+
   // The container can be unmounted and remounted with the surrounding v-if.
   watch(
     containerRef,
@@ -120,5 +133,6 @@ export function useVirtualList<T>(
     startIndex,
     endIndex,
     scrollToTop,
+    scrollToIndex,
   }
 }

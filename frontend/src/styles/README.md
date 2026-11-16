@@ -16,7 +16,6 @@ src/styles/
    ├─ views/home-page.scss
    ├─ listing/chat-panel.scss
    ├─ listing/supplier-product-selector.scss
-   ├─ listing/listing-tabs.scss
    ├─ grid/excel-grid.scss
    └─ …                    # 其余组件同名文件
 ```

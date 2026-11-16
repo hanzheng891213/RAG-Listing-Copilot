@@ -25,8 +25,9 @@ use([PieChart, BarChart, TitleComponent, TooltipComponent, LegendComponent, Grid
  * provider, a single editor open at a time, credentials and extras inside it.
  *
  * Provider-side model catalogues are gone on purpose — the shipped model names
- * age faster than this page can be updated. A provider now carries one free
- * model id typed by the user, and everything else is credential + endpoint.
+ * age faster than this page can be updated, and a preset default model hides
+ * which model is actually being billed. A provider now carries one free model
+ * name typed by the user from the provider's own documentation.
  */
 const { t, te } = useI18n()
 const modelStore = useModelStore()

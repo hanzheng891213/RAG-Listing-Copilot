@@ -11,10 +11,11 @@ import type { GridProduct } from '@/composables/useGridProducts'
 /**
  * Product picker for the 上架表 rows.
  *
- * Rows come from the table (not from an upload store): the same SKU shown in the
- * table can be generated here, singly or as a batch, and the result is written
- * back to that row. Generated rows are painted deep green, pending rows pale
- * green, so the remaining batch is visible at a glance.
+ * The list doubles as the product switcher: clicking a row loads that product's
+ * generated listing and chat thread in the centre, exactly like the old tab
+ * strip, but without spending a separate horizontal column on navigation.
+ * Generated rows are painted deep green, pending rows pale green, and the row
+ * currently shown in the preview carries an accent ring.
  */
 const props = defineProps<{
   products: GridProduct[]
@@ -22,6 +23,7 @@ const props = defineProps<{
   selectedIds: string[]
   generatingIds: string[]
   platform: Platform
+  activeProductId?: string
   batchActive?: boolean
   batchPaused?: boolean
 }>()
@@ -35,6 +37,7 @@ const emit = defineEmits<{
   (e: 'toggle', id: string): void
   (e: 'toggle-all', checked: boolean): void
   (e: 'detail', product: GridProduct): void
+  (e: 'select-product', product: GridProduct): void
   (e: 'reload'): void
 }>()
 
@@ -53,12 +56,23 @@ const filtered = computed(() => {
 })
 
 // 74 = item height (66) + row gap (8). Keep the CSS in sync with this number.
-const { containerRef, onScroll, visibleItems, totalHeight, offsetY, scrollToTop } =
+const { containerRef, onScroll, visibleItems, totalHeight, offsetY, scrollToTop, scrollToIndex } =
   useVirtualList(filtered, { itemHeight: 74 })
 
 // A filtered list starts at the top: keeping the old offset would open the
 // results halfway down and look like rows are missing.
 watch(search, () => scrollToTop())
+
+// Batch generation and "generate from the card" both change the active product;
+// keep that row inside the virtual window instead of letting it drift off-screen.
+watch(
+  () => props.activeProductId,
+  (productId) => {
+    if (!productId) return
+    const index = filtered.value.findIndex((product) => product.id === productId)
+    if (index >= 0) scrollToIndex(index)
+  },
+)
 
 const allChecked = computed(() => {
   const selectable = filtered.value.filter((product) => product.editable)
@@ -96,6 +110,14 @@ function isGenerating(product: GridProduct): boolean {
   return props.generatingIds.includes(product.id)
 }
 
+function isActive(product: GridProduct): boolean {
+  return Boolean(props.activeProductId) && props.activeProductId === product.id
+}
+
+function onSelect(product: GridProduct): void {
+  emit('select-product', product)
+}
+
 function isGenerated(product: GridProduct): boolean {
   return hasGeneratedListing(product.fields)
 }
@@ -129,7 +151,10 @@ function onBatch(): void {
 <template>
   <div class="product-selector">
     <div class="selector-head">
-      <h3 class="panel-title">{{ t('listing.selectProduct') }}</h3>
+      <div class="selector-heading">
+        <h3 class="panel-title">{{ t('listing.selectProduct') }}</h3>
+        <span class="selector-subtitle">{{ t('listing.clickToPreview') }}</span>
+      </div>
       <span class="selector-count">{{ t('listing.fromTable', { count: products.length }) }}</span>
     </div>
 
@@ -218,13 +243,21 @@ function onBatch(): void {
                 'is-generated': isGenerated(product),
                 'is-ungenerated': !isGenerated(product),
                 'is-readonly': !product.editable,
+                'is-active': isActive(product),
               }"
               v-tooltip="product.editable ? '' : t('listing.readOnlyRow')"
+              role="button"
+              tabindex="0"
+              :aria-pressed="isActive(product)"
+              @click="onSelect(product)"
+              @keydown.enter.prevent="onSelect(product)"
+              @keydown.space.prevent="onSelect(product)"
             >
               <el-checkbox
                 :model-value="selectedIds.includes(product.id)"
                 :disabled="busy || !product.editable"
                 class="item-check"
+                @click.stop
                 @update:model-value="() => emit('toggle', product.id)"
               />
 
@@ -233,7 +266,12 @@ function onBatch(): void {
                   <span class="product-title">{{ labelOf(product) }}</span>
                   <el-icon v-if="isGenerated(product)" class="product-done-icon"><CircleCheckFilled /></el-icon>
                 </span>
-                <span class="product-meta">{{ metaOf(product) || t('listing.noMeta') }}</span>
+                <span class="product-sub-row">
+                  <span class="product-meta">{{ metaOf(product) || t('listing.noMeta') }}</span>
+                  <span v-if="isActive(product)" class="product-active-tag">
+                    {{ t('listing.previewing') }}
+                  </span>
+                </span>
               </div>
 
               <div class="btn-row">

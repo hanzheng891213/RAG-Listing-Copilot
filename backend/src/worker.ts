@@ -214,6 +214,16 @@ app.get('/api/auth/me', async (c) => {
   }
 })
 
+app.get('/api/auth/users', (c) => {
+  if (!isAdminRequest(c)) {
+    return c.json({ error: 'Admin access required', code: 'ERR_ADMIN_REQUIRED' }, 403)
+  }
+  const users = Array.from(userStore.values())
+    .map(sanitizeUser)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+  return c.json({ users })
+})
+
 // ════════════════════════════════════════════════════════════════════
 // Model routes
 // ════════════════════════════════════════════════════════════════════

@@ -7,6 +7,7 @@ import ExcelGrid from '@/components/grid/ExcelGrid.vue'
 import GridToolbar from '@/components/grid/GridToolbar.vue'
 import GridLayoutPanel from '@/components/grid/GridLayoutPanel.vue'
 import ImportReportDialog from '@/components/grid/ImportReportDialog.vue'
+import ProductInfoDialog from '@/components/common/ProductInfoDialog.vue'
 import LanguageRadialMenu from '@/components/listing/LanguageRadialMenu.vue'
 import { useProductGrid } from '@/composables/useProductGrid'
 import { useGridSelection } from '@/composables/useGridSelection'
@@ -120,6 +121,58 @@ const selectionSize = computed(() => {
 })
 
 const canWrite = computed(() => auth.isLoggedIn)
+
+// ── Row detail modal (double-click the row-number gutter) ───────────
+const detailOpen = ref(false)
+const detailRowId = ref('')
+
+const detailRow = computed(() =>
+  detailRowId.value ? grid.findRow(detailRowId.value) ?? null : null,
+)
+const detailCanEdit = computed(() => (detailRow.value ? grid.canEditFor(detailRow.value) : false))
+const detailTitle = computed(() => {
+  const row = detailRow.value
+  if (!row) return ''
+  return row.fields.productName || row.fields.sku || row.id
+})
+const detailSubtitle = computed(() => {
+  const row = detailRow.value
+  if (!row) return ''
+  return [row.fields.sku, row.fields.category, row.ownerName]
+    .filter((value) => Boolean(value && value.trim()))
+    .join(' · ')
+})
+
+function onRowOpen(payload: { rowId: string }): void {
+  const row = grid.findRow(payload.rowId)
+  if (!row) return
+  gridRef.value?.commitEditing()
+  detailRowId.value = payload.rowId
+  detailOpen.value = true
+}
+
+/**
+ * The modal is an explicit edit surface: apply every field, then persist the
+ * row immediately so closing the modal never leaves a silent draft behind.
+ */
+async function onDetailSave(values: Record<string, string>): Promise<void> {
+  const row = detailRow.value
+  if (!row) return
+  if (!grid.canEditFor(row)) {
+    ElMessage.warning(t('grid.rowNoPermission'))
+    return
+  }
+
+  const changed = grid.applyFields(row.id, values)
+  detailOpen.value = false
+  if (!changed) {
+    ElMessage.info(t('grid.infoUnchanged'))
+    return
+  }
+
+  const saved = await grid.saveOne(row.id)
+  if (saved) ElMessage.success(t('grid.infoSaved'))
+}
 
 const clipboard = useGridClipboard({
   rows,
@@ -687,6 +740,7 @@ const shortcuts = computed(() => [
         @select="onSelect"
         @select-row="onSelectRow"
         @request-save-row="onRowSave"
+        @row-open="onRowOpen"
         @row-generate="onRowGenerate"
         @row-delete="onRowDelete"
       />
@@ -714,6 +768,18 @@ const shortcuts = computed(() => [
     />
 
     <ImportReportDialog v-model:open="reportOpen" :report="importReport" />
+
+    <ProductInfoDialog
+      v-model:open="detailOpen"
+      :title="detailTitle"
+      :subtitle="detailSubtitle"
+      :fields="fields"
+      :values="detailRow?.fields ?? {}"
+      editable
+      :can-edit="detailCanEdit"
+      :saving="saving"
+      @save="onDetailSave"
+    />
 
     <LanguageRadialMenu
       :open="ring.open"

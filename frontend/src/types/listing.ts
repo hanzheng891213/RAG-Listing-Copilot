@@ -22,13 +22,6 @@ export interface ComplianceResult {
   flaggedContent?: string
 }
 
-/** One entry in the listing tab strip: a generated session for a table row. */
-export interface ListingTab {
-  id: string
-  label: string
-  generating: boolean
-}
-
 export type Platform = 'amazon' | 'shopify' | 'ebay' | 'etsy'
 
 export interface ListingTemplate {

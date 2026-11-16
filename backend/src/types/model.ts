@@ -1,14 +1,8 @@
-export interface ModelInfo {
-  id: string
-  name: string
-}
-
 export interface ModelProvider {
   id: string
   name: string
   baseUrl: string
   signupUrl: string
-  models: ModelInfo[]
 }
 
 export interface ProviderConfig {

@@ -1,13 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, provide } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import AppSidebar from './AppSidebar.vue'
 import AppHeader from './AppHeader.vue'
 import { useI18n } from 'vue-i18n'
 import { useSupplierStore } from '@/stores/supplierStore'
 import { FILE_ACCEPT_EXTENSIONS } from '@/utils/constants'
-import type { SupplierProduct } from '@/types/supplier'
-import { useSupplierParser } from '@/composables/useSupplierParser'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -115,16 +113,6 @@ onUnmounted(() => {
   window.removeEventListener('dragleave', onDragLeave)
   window.removeEventListener('drop', onDrop)
 })
-
-// 商品详情浮动面板（从 breadcrumb 下方滑出）
-const { getProductLabel } = useSupplierParser()
-const detailProduct = ref<SupplierProduct | null>(null)
-
-function showProductDetail(product: SupplierProduct | null) {
-  detailProduct.value = product
-}
-
-provide('showProductDetail', showProductDetail)
 </script>
 
 <template>
@@ -137,24 +125,6 @@ provide('showProductDetail', showProductDetail)
     />
     <div class="main-area" :style="{ marginLeft: sidebarWidth }">
       <AppHeader @toggle-sidebar="toggleSidebar" />
-
-      <!-- 商品详情面板：从 breadcrumb 位置下滑出 -->
-      <Transition name="detail-slide">
-        <div v-if="detailProduct" class="product-detail-overlay" @click.self="detailProduct = null">
-          <div class="product-detail-panel">
-            <div class="detail-header">
-              <span class="detail-title">{{ getProductLabel(detailProduct) }}</span>
-              <button class="detail-close" @click="detailProduct = null">&times;</button>
-            </div>
-            <div class="detail-body">
-              <div v-for="(value, key) in detailProduct.rawData" :key="key" class="detail-row">
-                <span class="detail-label">{{ key }}</span>
-                <span class="detail-value">{{ value || '-' }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Transition>
 
       <main class="main-content">
         <router-view v-slot="{ Component }">

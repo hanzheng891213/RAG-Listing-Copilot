@@ -25,3 +25,13 @@ export function login(params: LoginParams): Promise<AuthResponse> {
 export function fetchMe(): Promise<UserInfo> {
   return client.get('/auth/me') as any
 }
+
+/**
+ * Directory of registered accounts, admin only.
+ *
+ * Empty when the backend is unavailable — the permission page then falls back
+ * to the accounts registered in this browser.
+ */
+export function fetchUsers(): Promise<{ users: UserInfo[] }> {
+  return client.get('/auth/users') as any
+}

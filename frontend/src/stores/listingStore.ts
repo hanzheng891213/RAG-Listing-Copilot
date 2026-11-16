@@ -320,6 +320,16 @@ export const useListingStore = defineStore('listing', () => {
   }
 
   /**
+   * Clears the preview without touching the session list: used when the user
+   * clicks a product that has not been generated yet, so the centre panel can
+   * show that product's empty state instead of another product's listing.
+   */
+  function clearActiveListing() {
+    activeListing.value = null
+    versionHistory.value = []
+  }
+
+  /**
    * Merges an AI suggestion into the active listing.
    *
    * Only fields that actually differ are written, so clicking "apply" on a
@@ -415,6 +425,7 @@ export const useListingStore = defineStore('listing', () => {
     setPlatform,
     setTemplate,
     selectListing,
+    clearActiveListing,
     applyPatch,
     exportListing,
   }

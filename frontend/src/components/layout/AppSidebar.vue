@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/authStore'
+import { usePermissionStore, type PermissionKey } from '@/stores/permissionStore'
 
 const props = defineProps<{ collapsed: boolean; mobileOpen: boolean }>()
 const emit = defineEmits<{ toggle: []; nav: [] }>()
@@ -11,16 +12,32 @@ const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const permission = usePermissionStore()
 
-const BASE_NAV_ITEMS = [
+interface NavItem {
+  path: string
+  labelKey: string
+  icon: string
+  requiresAdmin?: boolean
+  permission?: PermissionKey
+}
+
+const BASE_NAV_ITEMS: NavItem[] = [
   { path: '/', labelKey: 'nav.home', icon: 'HomeFilled' },
-  { path: '/product-grid', labelKey: 'nav.productGrid', icon: 'Grid' },
-  { path: '/listing-generator', labelKey: 'nav.listingGenerator', icon: 'MagicStick' },
-  { path: '/knowledge-base', labelKey: 'nav.knowledgeBase', icon: 'Collection' },
-  { path: '/model-manager', labelKey: 'nav.modelManager', icon: 'Cpu', requiresAdmin: true },
+  { path: '/product-grid', labelKey: 'nav.productGrid', icon: 'Grid', permission: 'productGrid' },
+  { path: '/listing-generator', labelKey: 'nav.listingGenerator', icon: 'MagicStick', permission: 'listingGenerator' },
+  { path: '/knowledge-base', labelKey: 'nav.knowledgeBase', icon: 'Collection', permission: 'knowledgeBase' },
+  { path: '/model-manager', labelKey: 'nav.modelManager', icon: 'Cpu', permission: 'modelManager' },
+  { path: '/permission-settings', labelKey: 'nav.permissionSettings', icon: 'Lock', requiresAdmin: true },
 ]
 
-const navItems = computed(() => BASE_NAV_ITEMS.filter((item) => !item.requiresAdmin || auth.isAdmin))
+const navItems = computed(() =>
+  BASE_NAV_ITEMS.filter((item) => {
+    if (item.requiresAdmin && !auth.isAdmin) return false
+    if (item.permission && !permission.can(item.permission)) return false
+    return true
+  }),
+)
 
 function isActive(path: string) {
   if (path === '/') return route.path === '/'

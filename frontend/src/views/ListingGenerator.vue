@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, ref, watch, onMounted, onUnmounted } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -7,16 +7,16 @@ import { useListingGenerator } from '@/composables/useListingGenerator'
 import { useGridProducts, type GridProduct } from '@/composables/useGridProducts'
 import { listingToFields } from '@/composables/useListingGeneration'
 import { useModelStore } from '@/stores/modelStore'
-import { cellToBulletPoints, hasGeneratedListing } from '@/utils/gridFields'
+import { buildFieldsFromValues, cellToBulletPoints, hasGeneratedListing } from '@/utils/gridFields'
 import ListingPreview from '@/components/listing/ListingPreview.vue'
-import ListingTabs from '@/components/listing/ListingTabs.vue'
 import CompliancePanel from '@/components/listing/CompliancePanel.vue'
 import SEOInsights from '@/components/listing/SEOInsights.vue'
 import ExportBar from '@/components/listing/ExportBar.vue'
 import ModelMonitorPanel from '@/components/listing/ModelMonitorPanel.vue'
 import ChatPanel from '@/components/listing/ChatPanel.vue'
 import SupplierProductSelector from '@/components/listing/SupplierProductSelector.vue'
-import type { GeneratedListing, ListingTab } from '@/types/listing'
+import ProductInfoDialog from '@/components/common/ProductInfoDialog.vue'
+import type { GeneratedListing } from '@/types/listing'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -60,22 +60,64 @@ const batchDone = computed(() =>
 const batchOk = computed(() => batch.value?.ok ?? 0)
 const batchFailed = computed(() => batch.value?.failed ?? 0)
 
-/** Products with a generated listing become switchable tabs in the center. */
+/** The product list is the navigation: clicking a row switches preview + chat. */
 const productById = computed(() => new Map(products.value.map((product) => [product.id, product])))
-const listingTabs = computed<ListingTab[]>(() =>
-  store.generatedListings.map((listing) => {
-    const product = productById.value.get(listing.productId)
-    return {
-      id: listing.id,
-      label: product ? labelOf(product) : listing.title || t('listing.untitledProduct'),
-      generating: listing.id === store.generatingListingId,
-    }
-  }),
+const focusedProductId = ref('')
+const focusedProduct = computed(() => productById.value.get(focusedProductId.value) ?? null)
+/**
+ * Highlight in the list. A generated product is highlighted through its active
+ * listing; an ungenerated product the user just clicked has no listing, so the
+ * explicit focus id keeps that selection visible.
+ */
+const activeProductId = computed(
+  () => store.activeListing?.productId || focusedProductId.value,
 )
-const activeTabId = computed(() => store.activeListing?.id ?? '')
 
-/** Provided by AppLayout; opens the read-only product detail sheet. */
-const showProductDetail = inject<(product: GridProduct | null) => void>('showProductDetail')
+/**
+ * Same contract the old tab strip had: switch the centre preview and the chat
+ * thread to this product. A product without a listing clears the preview and
+ * shows its own "not generated yet" state instead of another product's content.
+ */
+function selectProductFromList(product: GridProduct): void {
+  focusedProductId.value = product.id
+  const listing = store.findListing(product.id)
+  if (listing) {
+    store.selectListing(listing)
+    return
+  }
+  store.clearActiveListing()
+}
+
+// Generation (single or batch) activates a listing directly; mirror that back
+// into the list highlight so the row the preview belongs to is always marked.
+watch(
+  () => store.activeListing?.productId,
+  (productId) => {
+    if (productId) focusedProductId.value = productId
+  },
+)
+
+/** Detail opens in a modal: the same information as the table row, without
+ *  leaving the generation page or shifting the three-column layout. */
+const detailProduct = ref<GridProduct | null>(null)
+const detailFields = computed(() =>
+  detailProduct.value ? buildFieldsFromValues(detailProduct.value.fields) : [],
+)
+const detailSubtitle = computed(() => {
+  const product = detailProduct.value
+  if (!product) return ''
+  return [product.fields.sku, product.fields.category]
+    .filter((value) => Boolean(value && value.trim()))
+    .join(' · ')
+})
+
+function openProductDetail(product: GridProduct): void {
+  detailProduct.value = product
+}
+
+function closeProductDetail(): void {
+  detailProduct.value = null
+}
 
 // 流式状态文字轮播（每2.5s切换）
 const STATUS_TEXTS = ['正在生成标题', '正在生成五点描述', '正在生成详情描述', '正在检查合规性', '正在进行优化', '正在优化标题', '正在优化五点', '正在优化详情']
@@ -154,11 +196,9 @@ function hydrateTabs(): void {
   if (!store.activeListing && store.generatedListings.length > 0) {
     store.selectListing(store.generatedListings[0])
   }
-}
-
-function selectTab(id: string): void {
-  const listing = store.generatedListings.find((item) => item.id === id)
-  if (listing) store.selectListing(listing)
+  if (store.activeListing?.productId) {
+    focusedProductId.value = store.activeListing.productId
+  }
 }
 
 function toggle(id: string): void {
@@ -210,6 +250,7 @@ async function generateProduct(product: GridProduct, language: string): Promise<
   }
   if (generatingIds.value.includes(product.id)) return 'skipped'
 
+  focusedProductId.value = product.id
   generatingIds.value = [...generatingIds.value, product.id]
   try {
     const completion = waitForGeneration(product.id)
@@ -246,6 +287,17 @@ async function generateProduct(product: GridProduct, language: string): Promise<
 
 async function onGenerate(payload: { product: GridProduct; language: string }): Promise<void> {
   await generateProduct(payload.product, payload.language)
+}
+
+/** CTA in the "selected product has no listing yet" state. */
+function generateFocusedProduct(): void {
+  const product = focusedProduct.value
+  if (!product) return
+  if (!product.editable) {
+    ElMessage.warning(t('listing.readOnlyRow'))
+    return
+  }
+  void generateProduct(product, store.selectedLanguage)
 }
 
 async function onBatchGenerate(payload: { products: GridProduct[]; language: string }): Promise<void> {
@@ -453,6 +505,7 @@ async function onChatApplied(payload: { listing: GeneratedListing }): Promise<vo
             :selected-ids="selectedIds"
             :generating-ids="generatingIds"
             :platform="store.selectedPlatform"
+            :active-product-id="activeProductId"
             :batch-active="batchActive"
             :batch-paused="batchPaused"
             @generate="onGenerate"
@@ -462,19 +515,14 @@ async function onChatApplied(payload: { listing: GeneratedListing }): Promise<vo
             @cancel-batch="cancelBatch"
             @toggle="toggle"
             @toggle-all="toggleAll"
-            @detail="(product) => showProductDetail?.(product)"
+            @detail="openProductDetail"
+            @select-product="selectProductFromList"
           />
         </div>
       </div>
 
-      <!-- Center: generated-product tabs + listing + SEO insights -->
+      <!-- Center: listing + SEO insights -->
       <div class="content-area">
-        <ListingTabs
-          :tabs="listingTabs"
-          :active-id="activeTabId"
-          @select="selectTab"
-        />
-
         <div class="listing-area">
           <!-- No model configured warning -->
           <div v-if="!modelStore.hasAnyConfigured && products.length > 0" class="no-model-banner">
@@ -522,6 +570,22 @@ async function onChatApplied(payload: { listing: GeneratedListing }): Promise<vo
             />
           </template>
 
+          <div v-else-if="focusedProduct" class="empty-state product-empty">
+            <div class="empty-icon"><el-icon :size="48"><MagicStick /></el-icon></div>
+            <h3>{{ labelOf(focusedProduct) }}</h3>
+            <p>{{ t('listing.productNotGenerated') }}</p>
+            <el-button
+              v-if="focusedProduct.editable"
+              type="primary"
+              :loading="generatingIds.includes(focusedProduct.id)"
+              :disabled="batchActive"
+              @click="generateFocusedProduct"
+            >
+              {{ t('listing.generateNow') }}
+            </el-button>
+            <p v-else class="empty-hint">{{ t('listing.readOnlyRow') }}</p>
+          </div>
+
           <div v-else class="empty-state">
             <div class="empty-icon"><el-icon :size="48"><MagicStick /></el-icon></div>
             <h3>{{ t('listing.noListing') }}</h3>
@@ -539,11 +603,20 @@ async function onChatApplied(payload: { listing: GeneratedListing }): Promise<vo
         </div>
       </div>
 
-      <!-- Right 1/4: Chat Panel (Trae style) -->
+      <!-- Right: Chat Panel (Trae style) -->
       <div class="chat-area">
         <ChatPanel @applied="onChatApplied" />
       </div>
     </div>
+
+    <ProductInfoDialog
+      :open="Boolean(detailProduct)"
+      :title="detailProduct ? labelOf(detailProduct) : ''"
+      :subtitle="detailSubtitle"
+      :fields="detailFields"
+      :values="detailProduct?.fields ?? {}"
+      @update:open="(value) => { if (!value) closeProductDetail() }"
+    />
   </div>
 </template>
 

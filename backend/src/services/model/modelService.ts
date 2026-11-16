@@ -1,45 +1,33 @@
-import type { ModelProvider, ModelInfo, UsageRecord, UsageStats, UsageBreakdown } from '../../types/model.js'
+import type { ModelProvider, UsageRecord, UsageStats, UsageBreakdown } from '../../types/model.js'
 import { v4 as uuid } from 'uuid'
 
-// ─── Built-in provider definitions (no api keys here!) ────────────────
+// ─── Built-in provider definitions (no api keys, no model catalogue) ──
+// Model ids are user-supplied: provider catalogues age quickly, so the page
+// asks for the model name the provider's own website documents.
 const BUILTIN_PROVIDERS: ModelProvider[] = [
   {
     id: 'deepseek',
     name: 'DeepSeek',
     baseUrl: 'https://api.deepseek.com/v1',
     signupUrl: 'https://platform.deepseek.com/api_keys',
-    models: [
-      { id: 'deepseek-v4-flash', name: 'DeepSeek-V4 Flash' },
-      { id: 'deepseek-reasoner', name: 'DeepSeek-R1' },
-    ],
   },
   {
     id: 'qwen',
     name: '通义千问',
     baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     signupUrl: 'https://tongyi.aliyun.com',
-    models: [
-      { id: 'qwen3.5-35b-a3b', name: 'qwen3.5-35b-a3b' },
-      { id: 'qwen-plus', name: 'Qwen Plus' },
-      { id: 'qwen-max', name: 'Qwen Max' },
-    ],
   },
   {
     id: 'doubao',
     name: '豆包',
     baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
     signupUrl: 'https://console.volcengine.com/ark/region:ark+cn-beijing/endpoint',
-    models: [
-      { id: 'doubao-seed-2-0-mini-260428', name: 'Doubao Seed 2-0-260428 Mini' },
-      { id: 'doubao-pro-256k', name: 'Doubao Pro 256K' },
-    ],
   },
   {
     id: 'custom',
     name: '自定义',
     baseUrl: '',
     signupUrl: '',
-    models: [{ id: 'custom-model', name: 'Custom Model' }],
   },
 ]
 
@@ -119,9 +107,14 @@ class ModelService {
     const provider = BUILTIN_PROVIDERS.find((p) => p.id === providerId)
     if (!provider || !apiKey) return null
 
-    // The resolved id is what gets recorded — falling back so usage is still
-    // attributable when the caller left the model unspecified.
-    const resolvedModel = options?.model || provider.models[0]?.id || 'default'
+    // No fallback catalogue: the caller must send the model name the user got
+    // from the provider's website. Sending a guessed default is worse than
+    // failing with a clear error.
+    const resolvedModel = (options?.model ?? '').trim()
+    if (!resolvedModel) {
+      console.error(`[modelService] Provider "${providerId}" has no model name configured`)
+      return null
+    }
 
     const payload: Record<string, unknown> = {
       model: resolvedModel,
@@ -179,7 +172,11 @@ class ModelService {
     const provider = BUILTIN_PROVIDERS.find((p) => p.id === providerId)
     if (!provider || !apiKey) return
 
-    const resolvedModel = options?.model || provider.models[0]?.id || 'default'
+    const resolvedModel = (options?.model ?? '').trim()
+    if (!resolvedModel) {
+      console.error(`[modelService] Provider "${providerId}" has no model name configured`)
+      return
+    }
 
     const payload: Record<string, unknown> = {
       model: resolvedModel,
@@ -347,9 +344,6 @@ class ModelService {
     }
 
     const providerNames = new Map(BUILTIN_PROVIDERS.map((p) => [p.id, p.name]))
-    const modelNames = new Map(
-      BUILTIN_PROVIDERS.flatMap((p) => p.models.map((m) => [`${p.id}:${m.id}`, m.name])),
-    )
 
     interface Bucket {
       providerId: string
@@ -423,7 +417,7 @@ class ModelService {
     const byModel = [...modelBuckets.entries()]
       .map(([key, b]) => {
         const providerName = providerNames.get(b.providerId) || b.providerId
-        const modelName = modelNames.get(key) || b.modelId || 'unknown model'
+        const modelName = b.modelId || 'unknown model'
         return toBreakdown(b, key, `${providerName} · ${modelName}`)
       })
       .sort((a, b) => b.cost - a.cost)

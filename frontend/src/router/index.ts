@@ -1,5 +1,8 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/authStore'
+import { usePermissionStore, type PermissionKey } from '@/stores/permissionStore'
+import i18n from '@/locales'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -18,25 +21,51 @@ const routes: RouteRecordRaw[] = [
     path: '/listing-generator',
     name: 'ListingGenerator',
     component: () => import('@/views/ListingGenerator.vue'),
-    meta: { titleKey: 'nav.listingGenerator', icon: 'MagicStick', requiresAuth: true },
+    meta: {
+      titleKey: 'nav.listingGenerator',
+      icon: 'MagicStick',
+      requiresAuth: true,
+      permission: 'listingGenerator',
+    },
   },
   {
     path: '/product-grid',
     name: 'ProductGrid',
     component: () => import('@/views/ProductGrid.vue'),
-    meta: { titleKey: 'nav.productGrid', icon: 'Grid', requiresAuth: true },
+    meta: {
+      titleKey: 'nav.productGrid',
+      icon: 'Grid',
+      requiresAuth: true,
+      permission: 'productGrid',
+    },
   },
   {
     path: '/knowledge-base',
     name: 'KnowledgeBase',
     component: () => import('@/views/KnowledgeBase.vue'),
-    meta: { titleKey: 'nav.knowledgeBase', icon: 'Collection', requiresAuth: true },
+    meta: {
+      titleKey: 'nav.knowledgeBase',
+      icon: 'Collection',
+      requiresAuth: true,
+      permission: 'knowledgeBase',
+    },
   },
   {
     path: '/model-manager',
     name: 'ModelManager',
     component: () => import('@/views/ModelManager.vue'),
-    meta: { titleKey: 'nav.modelManager', icon: 'Cpu', requiresAdmin: true },
+    meta: {
+      titleKey: 'nav.modelManager',
+      icon: 'Cpu',
+      requiresAuth: true,
+      permission: 'modelManager',
+    },
+  },
+  {
+    path: '/permission-settings',
+    name: 'PermissionSettings',
+    component: () => import('@/views/PermissionSettings.vue'),
+    meta: { titleKey: 'nav.permissionSettings', icon: 'Lock', requiresAdmin: true },
   },
 ]
 
@@ -64,6 +93,14 @@ router.beforeEach(async (to) => {
       return { path: '/', replace: true }
     }
     if (to.meta.requiresAdmin && !auth.isAdmin) {
+      return { path: '/', replace: true }
+    }
+
+    // Page permissions are a second gate below the auth check: an account can
+    // be signed in and still not own this page's group permission.
+    const permission = to.meta.permission as PermissionKey | undefined
+    if (permission && !usePermissionStore().can(permission)) {
+      ElMessage.warning(i18n.global.t('permissions.noAccess'))
       return { path: '/', replace: true }
     }
   }

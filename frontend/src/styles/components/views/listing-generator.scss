@@ -47,11 +47,12 @@
 .batch-progress-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
 .batch-progress-actions .el-button { font-size: 12px; }
 
-/* Center panel narrowed to 2/3 of its old 2fr share; the freed space goes to
-   the AI chat on the right (old ratio was 1fr / 2fr / 1fr). */
+/* Three columns: product list (which doubles as the product switcher), the
+   listing preview, and the AI chat. Removing the separate tab rail gives the
+   centre preview the widest share of the page. */
 .generator-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.34fr) minmax(0, 1.66fr);
+  grid-template-columns: minmax(0, 0.92fr) minmax(0, 2.08fr) minmax(0, 1.05fr);
   gap: 16px;
   align-items: start;
   min-height: calc(100vh - 200px);
@@ -90,12 +91,13 @@
   overflow: hidden;
 }
 
-/* ---- Center area (1/2) ---- */
+/* ---- Center area ---- */
 .content-area {
   display: flex;
   flex-direction: column;
   gap: 16px;
   min-height: 0;
+  min-width: 0;
 }
 
 .listing-area {
@@ -113,7 +115,7 @@
   padding: 20px;
 }
 
-/* ---- Right panel (1/4): Chat ---- */
+/* ---- Right panel: Chat ---- */
 .chat-area {
   background: var(--bg-card);
   border: 1px solid var(--border-color);
@@ -126,6 +128,7 @@
   flex-direction: column;
   overflow: hidden;
   box-shadow: 0 18px 48px -30px var(--shadow-color);
+  min-width: 0;
 }
 
 /* ---- No model banner ---- */
@@ -253,6 +256,22 @@
   color: var(--text-muted);
 }
 
+/* Selected product has no listing yet: keep the product name visible so the
+   centre panel still says which row the list is pointing at. */
+.product-empty {
+  padding: 64px 40px;
+}
+
+.product-empty h3 {
+  max-width: 520px;
+  overflow-wrap: anywhere;
+}
+
+.empty-hint {
+  font-size: 12px;
+  max-width: 340px;
+}
+
 .empty-icon {
   color: var(--accent-dim);
   margin-bottom: 8px;
@@ -314,13 +333,16 @@
 /* ---- Responsive ---- */
 @media (max-width: 1200px) {
   .generator-layout {
-    grid-template-columns: 1fr 2fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
   }
 
+  /* Two columns leave no room for the chat; it moves below the generator
+     instead of being squeezed into a 200px strip. */
   .chat-area {
+    grid-column: 1 / -1;
     position: static;
     max-height: none;
-    height: 680px;
+    height: 620px;
   }
 }
 
@@ -340,6 +362,7 @@
   }
 
   .chat-area {
+    grid-column: auto;
     height: 600px;
   }
 }

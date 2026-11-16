@@ -2,6 +2,8 @@
 
 .product-selector { display: flex; flex-direction: column; gap: 10px; width: 100%; height: 100%; }
 .selector-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-shrink: 0; }
+.selector-heading { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.selector-subtitle { font-size: 10.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .panel-title { font-family: var(--font-body); font-size: 15px; font-weight: 600; color: var(--text-primary); }
 .selector-count { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
 
@@ -35,6 +37,11 @@
   transition: all var(--transition-fast);
   position: relative;
   width: 100%;
+  cursor: pointer;
+}
+.product-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 .product-item.is-ungenerated { background: var(--product-idle-bg); color: var(--product-idle-text); }
 .product-item.is-ungenerated:hover { background: color-mix(in srgb, var(--product-idle-bg) 55%, var(--bg-card-hover)); border-color: var(--accent-dim); }
@@ -43,11 +50,39 @@
 .product-item.is-generating { border-color: var(--accent); }
 .product-item.is-readonly { opacity: 0.6; }
 .product-item.is-readonly .gen-btn { cursor: not-allowed; }
+
+/* The row currently loaded in the centre panel: a ring rather than a filled
+   background, so the generated / pending colour coding stays readable. */
+.product-item.is-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-glow), 0 8px 24px -18px var(--accent);
+}
+.product-item.is-generated.is-active {
+  border-color: var(--product-done-accent);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.14);
+}
+.product-active-tag {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 1.45;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+  border: 1px solid var(--accent-dim);
+  background: var(--accent-glow);
+}
+.product-item.is-generated .product-active-tag {
+  color: var(--product-done-text);
+  border-color: var(--product-done-accent);
+  background: rgba(255, 255, 255, 0.1);
+}
 .item-check { flex-shrink: 0; }
 .product-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
 .product-title-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .product-title { font-size: 13px; font-weight: 500; color: var(--product-idle-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.product-meta { font-size: 11px; color: var(--product-idle-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.product-sub-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.product-meta { flex: 1; min-width: 0; font-size: 11px; color: var(--product-idle-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .product-done-icon { flex-shrink: 0; color: var(--product-done-accent); font-size: 13px; }
 
 /* Deep-green rows need light text on every child, not only the card. */

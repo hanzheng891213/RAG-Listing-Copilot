@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from 'express'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import type { User, JwtPayload, LoginRequest, AuthResponse } from '../types/auth.js'
-import { requireAuth } from '../middleware/authMiddleware.js'
+import { requireAuth, requireAdmin } from '../middleware/authMiddleware.js'
 
 function getJwtSecret(): string {
   const secret = process.env.JWT_SECRET
@@ -113,6 +113,15 @@ router.get('/me', requireAuth, (req: Request, res: Response) => {
   }
 
   res.json(sanitizeUser(user))
+})
+
+// GET /api/auth/users — registered accounts, for the admin permission page.
+// Passwords never leave the store; the client only needs id / name / role.
+router.get('/users', requireAuth, requireAdmin, (_req: Request, res: Response) => {
+  const users = Array.from(userStore.values())
+    .map(sanitizeUser)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+  res.json({ users })
 })
 
 export default router

@@ -1,0 +1,251 @@
+/* views/PermissionSettings.vue — users, groups and page permissions. */
+
+.permission-settings {
+  max-width: 1440px;
+}
+
+.page-header {
+  margin-bottom: 16px;
+}
+
+.page-desc {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 15px;
+}
+
+.permission-alert {
+  margin-bottom: 16px;
+}
+
+.permission-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.permission-panel {
+  min-width: 0;
+  padding: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+}
+
+.panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.panel-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.panel-hint {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.panel-count {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.users-toolbar {
+  margin-bottom: 10px;
+}
+
+/* ── users table ───────────────────────────────────────────────── */
+.users-table {
+  background: transparent;
+}
+
+.user-cell {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.user-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.user-avatar.admin {
+  border-color: var(--accent-dim);
+  background: var(--accent-glow);
+  color: var(--accent);
+}
+
+.user-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.user-name {
+  font-size: 12.5px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-meta {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.role-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.role-tag.admin {
+  border-color: var(--accent-dim);
+  background: var(--accent-glow);
+  color: var(--accent);
+}
+
+/* ── groups ────────────────────────────────────────────────────── */
+.group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.group-card {
+  padding: 12px 13px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+}
+
+.group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.group-identity {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.group-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-tag {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.group-tag.admin {
+  border-color: var(--accent-dim);
+  background: var(--accent-glow);
+  color: var(--accent);
+}
+
+.group-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.group-members {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.permission-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin-top: 10px;
+}
+
+.permission-checks :deep(.el-checkbox) {
+  height: 26px;
+  margin-right: 0;
+}
+
+.permission-checks :deep(.el-checkbox__label) {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.group-note {
+  margin: 8px 0 0;
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+@media (max-width: 1200px) {
+  .permission-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .panel-head {
+    flex-wrap: wrap;
+  }
+
+  .group-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

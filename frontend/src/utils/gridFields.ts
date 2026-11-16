@@ -147,6 +147,28 @@ export function buildFields(rows: GridRow[]): GridField[] {
     }
   }
 
+  return withExtras(extras)
+}
+
+/**
+ * Field descriptors for a loose value record (a listing-picker product, a modal
+ * draft). Same core columns and extra-column cap as a grid row, so labels match
+ * what the 上架表 shows.
+ */
+export function buildFieldsFromValues(values: Record<string, string>): GridField[] {
+  const known = new Set(CORE_FIELDS.map((f) => f.key))
+  const extras: string[] = []
+
+  for (const key of Object.keys(values ?? {})) {
+    if (known.has(key) || extras.includes(key)) continue
+    if (extras.length >= MAX_EXTRA_COLUMNS) break
+    extras.push(key)
+  }
+
+  return withExtras(extras)
+}
+
+function withExtras(extras: string[]): GridField[] {
   return [
     ...CORE_FIELDS,
     ...extras.map<GridField>((key) => ({

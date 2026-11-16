@@ -5,7 +5,7 @@ import client from './client'
  *
  * Model catalogues are deliberately not surfaced any more: provider-side model
  * names age quickly and the shipped directory is always behind. The manager
- * keeps one free-form model id per provider instead.
+ * keeps one free-form model name per provider instead, with no default.
  */
 export interface ModelProvider {
   id: string
@@ -17,7 +17,7 @@ export interface ModelProvider {
 export interface ProviderConfig {
   providerId: string
   apiKey: string
-  /** Model id sent as `model`; typed by the user, never picked from a stale list. */
+  /** Model name sent as `model`; typed by the user from the provider's docs. */
   activeModel: string
   temperature: number
   maxTokens: number

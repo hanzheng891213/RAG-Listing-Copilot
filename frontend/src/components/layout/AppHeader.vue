@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { setLocale, LANGUAGES } from '@/locales'
 import { useAuthStore } from '@/stores/authStore'
+import { usePermissionStore } from '@/stores/permissionStore'
 import { useKnowledgeStore } from '@/stores/knowledgeStore'
 import { useUiStore } from '@/stores/uiStore'
 
@@ -14,6 +15,7 @@ const { t, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const permission = usePermissionStore()
 const knowledge = useKnowledgeStore()
 const ui = useUiStore()
 
@@ -95,9 +97,13 @@ function goModelManager() {
                   </span>
                 </div>
               </el-dropdown-item>
-              <el-dropdown-item v-if="auth.isAdmin" @click="goModelManager">
+              <el-dropdown-item v-if="permission.can('modelManager')" @click="goModelManager">
                 <el-icon><Cpu /></el-icon>
                 {{ t('nav.modelManager') }}
+              </el-dropdown-item>
+              <el-dropdown-item v-if="auth.isAdmin" @click="router.push('/permission-settings')">
+                <el-icon><Lock /></el-icon>
+                {{ t('nav.permissionSettings') }}
               </el-dropdown-item>
               <el-dropdown-item divided @click="handleLogout">
                 <el-icon><SwitchButton /></el-icon>

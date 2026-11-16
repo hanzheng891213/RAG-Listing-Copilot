@@ -8,7 +8,7 @@ import authController from './controllers/authController.js'
 import modelController from './controllers/modelController.js'
 import knowledgeController from './controllers/knowledgeController.js'
 import productController from './controllers/productController.js'
-import { requireAuth, requireAdmin, checkApiUsage } from './middleware/authMiddleware.js'
+import { requireAuth, checkApiUsage } from './middleware/authMiddleware.js'
 import { rateLimiter } from './middleware/rateLimiter.js'
 import { seedKnowledgeBase } from './services/knowledge/seed.js'
 
@@ -64,8 +64,10 @@ app.use('/api/generate-listing', rateLimiter({ windowMs: 60_000, max: 20 }))
 // Auth routes (no usage tracking)
 app.use('/api/auth', authController)
 
-// Model routes — require auth + admin
-app.use('/api/models', requireAuth, requireAdmin, modelController)
+// Model routes — authenticated. Model access is granted by the frontend
+// permission group, and the response contains no credentials, so a group member
+// with "model management" can read the provider directory and usage stats.
+app.use('/api/models', requireAuth, modelController)
 
 // Knowledge base routes — public access (no auth required)
 app.use('/api/knowledge', knowledgeController)

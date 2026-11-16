@@ -7,15 +7,37 @@ import {
 } from '@/api/models'
 
 const ACTIVE_PROVIDER_KEY = 'rag-copilot-active-provider'
-const CONFIGS_STORAGE_KEY = 'rag-copilot-provider-configs'
+const ACTIVE_PROVIDER_PREFIX = 'rag-copilot-active-provider:'
+const CONFIGS_PREFIX = 'rag-copilot-provider-configs:'
+/** Pre-personalisation builds kept every user's config in one shared record. */
+const LEGACY_CONFIGS_KEY = 'rag-copilot-provider-configs'
 const CUSTOM_PROVIDERS_KEY = 'rag-copilot-custom-providers'
+const GUEST_SCOPE = 'guest'
+
+/**
+ * Keys are namespaced by login identity, so one browser can hold several
+ * accounts without leaking a key or a model choice between them. Before login
+ * (or for a guest) the `guest` scope is used.
+ */
+function scopeOf(userId: string): string {
+  const trimmed = (userId ?? '').trim()
+  if (!trimmed) return GUEST_SCOPE
+  return trimmed.replace(/[^A-Za-z0-9_-]+/g, '_') || GUEST_SCOPE
+}
+
+function configsKey(scope: string): string {
+  return `${CONFIGS_PREFIX}${scope}`
+}
+
+function activeProviderKey(scope: string): string {
+  return `${ACTIVE_PROVIDER_PREFIX}${scope}`
+}
 
 // ── localStorage helpers ──────────────────────────────────────────────
 
-function loadConfigsFromStorage(): ProviderConfig[] {
+function parseConfigs(raw: string | null): ProviderConfig[] {
+  if (!raw) return []
   try {
-    const raw = localStorage.getItem(CONFIGS_STORAGE_KEY)
-    if (!raw) return []
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
     // Older builds kept a per-provider model catalogue. Providers now carry a
@@ -29,9 +51,29 @@ function loadConfigsFromStorage(): ProviderConfig[] {
   }
 }
 
-function saveConfigsToStorage(configs: ProviderConfig[]): void {
+/**
+ * Load one identity's configs. The first logged-in account takes over the
+ * pre-personalisation record; later accounts start clean (they must never
+ * inherit another user's API key).
+ */
+function loadConfigsFromStorage(scope: string): ProviderConfig[] {
   try {
-    localStorage.setItem(CONFIGS_STORAGE_KEY, JSON.stringify(configs))
+    const own = parseConfigs(localStorage.getItem(configsKey(scope)))
+    if (own.length > 0 || scope === GUEST_SCOPE) return own
+
+    const legacy = parseConfigs(localStorage.getItem(LEGACY_CONFIGS_KEY))
+    if (legacy.length === 0) return []
+    localStorage.setItem(configsKey(scope), JSON.stringify(legacy))
+    localStorage.removeItem(LEGACY_CONFIGS_KEY)
+    return legacy
+  } catch {
+    return []
+  }
+}
+
+function saveConfigsToStorage(configs: ProviderConfig[], scope: string): void {
+  try {
+    localStorage.setItem(configsKey(scope), JSON.stringify(configs))
   } catch { /* storage full or unavailable */ }
 }
 
@@ -51,16 +93,21 @@ function saveCustomProviders(providers: ModelProvider[]): void {
   } catch { /* ignore */ }
 }
 
-function loadActiveProviderFromStorage(): string {
+function loadActiveProviderFromStorage(scope: string): string {
   try {
-    return localStorage.getItem(ACTIVE_PROVIDER_KEY) || ''
+    return localStorage.getItem(activeProviderKey(scope)) || ''
   } catch {
     return ''
   }
 }
 
-function saveActiveProviderToStorage(id: string): void {
+/**
+ * Persist the per-user choice, and mirror it to the legacy key: the SSE client
+ * still reads `X-Active-Provider` from that key, and the header is only a hint.
+ */
+function saveActiveProviderToStorage(id: string, scope: string): void {
   try {
+    localStorage.setItem(activeProviderKey(scope), id)
     localStorage.setItem(ACTIVE_PROVIDER_KEY, id)
   } catch { /* ignore */ }
 }
@@ -80,8 +127,10 @@ export const useModelStore = defineStore('model', () => {
   const directory = ref<ModelProvider[]>([])
   /** Providers the admin declared locally (custom endpoints / relays). */
   const customProviders = ref<ModelProvider[]>(loadCustomProviders())
-  const configs = ref<ProviderConfig[]>(loadConfigsFromStorage())
-  const activeProviderId = ref<string>(loadActiveProviderFromStorage())
+  /** Storage scope of the currently bound login (user id, or `guest`). */
+  const scope = ref(GUEST_SCOPE)
+  const configs = ref<ProviderConfig[]>(loadConfigsFromStorage(GUEST_SCOPE))
+  const activeProviderId = ref<string>(loadActiveProviderFromStorage(GUEST_SCOPE))
   const loaded = ref(false)
 
   /** Built-in + user-declared providers, in display order. */
@@ -147,9 +196,35 @@ export const useModelStore = defineStore('model', () => {
         !configs.value.find((c) => c.providerId === activeProviderId.value && c.apiKey)
       ) {
         activeProviderId.value = configuredProviders.value[0]?.providerId || ''
+        saveActiveProviderToStorage(activeProviderId.value, scope.value)
       }
     } catch {
       loaded.value = true
+    }
+  }
+
+  /**
+   * Switch the storage scope when the logged-in account changes.
+   *
+   * Each account keeps its own provider configs (and therefore its own API
+   * key), so signing out and back in restores the key instead of asking for it
+   * again. The first account also inherits the old global record; later
+   * accounts never see it.
+   */
+  function bindUser(userId: string | null | undefined): void {
+    const nextScope = scopeOf(userId ?? '')
+    if (nextScope === scope.value) return
+
+    scope.value = nextScope
+    configs.value = loadConfigsFromStorage(nextScope)
+    activeProviderId.value = loadActiveProviderFromStorage(nextScope)
+
+    const activeUsable = configs.value.some(
+      (config) => config.providerId === activeProviderId.value && config.apiKey,
+    )
+    if (!activeUsable) {
+      activeProviderId.value = configs.value.find((config) => config.apiKey)?.providerId || ''
+      saveActiveProviderToStorage(activeProviderId.value, nextScope)
     }
   }
 
@@ -164,16 +239,16 @@ export const useModelStore = defineStore('model', () => {
     } else {
       configs.value.push(config)
     }
-    saveConfigsToStorage(configs.value)
+    saveConfigsToStorage(configs.value, scope.value)
   }
 
   /** Removes a config row entirely (used when deleting a custom provider). */
   function removeProviderConfig(providerId: string) {
     configs.value = configs.value.filter((c) => c.providerId !== providerId)
-    saveConfigsToStorage(configs.value)
+    saveConfigsToStorage(configs.value, scope.value)
     if (activeProviderId.value === providerId) {
       activeProviderId.value = configuredProviders.value[0]?.providerId || ''
-      saveActiveProviderToStorage(activeProviderId.value)
+      saveActiveProviderToStorage(activeProviderId.value, scope.value)
     }
   }
 
@@ -184,7 +259,7 @@ export const useModelStore = defineStore('model', () => {
     const idx = configs.value.findIndex((c) => c.providerId === providerId)
     if (idx >= 0) {
       configs.value[idx].apiKey = ''
-      saveConfigsToStorage(configs.value)
+      saveConfigsToStorage(configs.value, scope.value)
     }
   }
 
@@ -241,7 +316,7 @@ export const useModelStore = defineStore('model', () => {
 
   function setActiveProvider(providerId: string) {
     activeProviderId.value = providerId
-    saveActiveProviderToStorage(providerId)
+    saveActiveProviderToStorage(providerId, scope.value)
   }
 
   function getConfig(providerId: string): ProviderConfig | undefined {
@@ -261,6 +336,7 @@ export const useModelStore = defineStore('model', () => {
     activeProvider,
     activeModelName,
     loadConfigs,
+    bindUser,
     setActiveProvider,
     updateProviderConfig,
     removeProviderConfig,

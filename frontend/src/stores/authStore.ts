@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import type { UserInfo } from '@/api/auth'
 import { login as loginApi, fetchMe } from '@/api/auth'
+import { useModelStore } from '@/stores/modelStore'
 
 const TOKEN_STORAGE = 'rag-copilot-token'
 const REGISTERED_USERS_KEY = 'rag-copilot-registered-users'
@@ -154,6 +155,40 @@ export const useAuthStore = defineStore('auth', () => {
     showLoginModal.value = false
   }
 
+  /**
+   * Accounts the app currently knows about: the built-in demo users, accounts
+   * registered in this browser, and the signed-in user. Used by the permission
+   * page; passwords never leave this function.
+   */
+  function listKnownUsers(): UserInfo[] {
+    const byName = new Map<string, UserInfo>()
+
+    for (const entry of Object.values(MOCK_USERS)) {
+      byName.set(entry.user.username.toLowerCase(), entry.user)
+    }
+    for (const entry of Object.values(loadRegisteredUsers())) {
+      const key = entry.user.username.toLowerCase()
+      if (!byName.has(key)) byName.set(key, entry.user)
+    }
+    if (user.value) byName.set(user.value.username.toLowerCase(), user.value)
+
+    return [...byName.values()].sort((a, b) => {
+      if (a.role !== b.role) return a.role === 'admin' ? -1 : 1
+      return a.createdAt.localeCompare(b.createdAt)
+    })
+  }
+
+  // ── Per-account model configuration ─────────────────────────────────
+  // The model store namespaces its API keys by login identity. Bind it here so
+  // every login / refresh / logout path switches the key set automatically.
+  watch(
+    user,
+    (next) => {
+      useModelStore().bindUser(next?.id ?? '')
+    },
+    { immediate: true },
+  )
+
   // Auto-refresh user on store init if token exists
   if (token.value && !user.value) {
     refreshUser()
@@ -173,5 +208,6 @@ export const useAuthStore = defineStore('auth', () => {
     logout,
     openLoginModal,
     closeLoginModal,
+    listKnownUsers,
   }
 })
