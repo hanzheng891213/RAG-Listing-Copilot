@@ -3,8 +3,9 @@ import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/authStore'
 import { ElMessage } from 'element-plus'
+import errors from '@/locales/errors'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const auth = useAuthStore()
 
 const isRegisterMode = ref(false)
@@ -12,6 +13,8 @@ const username = ref('')
 const password = ref('')
 const confirmPassword = ref('')
 const showPassword = ref(false)
+
+const PASSWORD_MIN = 10
 
 watch(() => auth.showLoginModal, (val) => {
   if (val) {
@@ -22,6 +25,17 @@ watch(() => auth.showLoginModal, (val) => {
   }
 })
 
+/** Localised API error: the server sends a code, the client owns the wording. */
+function errorMessage(error: any, fallbackKey: string): string {
+  const code = error?.response?.data?.code
+  const table = (errors as Record<string, Record<string, string>>)[locale.value]
+  return (
+    (code && (table?.[code] || errors.en?.[code])) ||
+    error?.response?.data?.error ||
+    t(fallbackKey)
+  )
+}
+
 async function handleLogin() {
   if (!username.value.trim() || !password.value) {
     ElMessage.warning(t('user.fillAllFields'))
@@ -31,12 +45,11 @@ async function handleLogin() {
     await auth.login(username.value.trim(), password.value)
     ElMessage.success(t('user.loginSuccess'))
   } catch (e: any) {
-    const msg = e.response?.data?.error || t('user.loginFailed')
-    ElMessage.error(msg)
+    ElMessage.error(errorMessage(e, 'user.loginFailed'))
   }
 }
 
-function handleRegister() {
+async function handleRegister() {
   if (!username.value.trim() || !password.value || !confirmPassword.value) {
     ElMessage.warning(t('user.fillAllFields'))
     return
@@ -45,11 +58,18 @@ function handleRegister() {
     ElMessage.warning(t('user.passwordMismatch'))
     return
   }
-  const success = auth.register(username.value.trim(), password.value)
-  if (success) {
+  // Mirror of the server rule for instant feedback; the server re-checks it.
+  if (password.value.length < PASSWORD_MIN || !/[A-Za-z]/.test(password.value) || !/[0-9]/.test(password.value)) {
+    ElMessage.warning(t('user.passwordRule'))
+    return
+  }
+
+  try {
+    await auth.register(username.value.trim(), password.value)
     ElMessage.success(t('user.registerSuccess'))
-  } else {
-    ElMessage.warning(t('user.usernameExists'))
+    ElMessage.info(t('user.registerPending'))
+  } catch (e: any) {
+    ElMessage.warning(errorMessage(e, 'user.registerFailed'))
   }
 }
 
@@ -89,6 +109,7 @@ function toggleMode() {
               <el-icon><User /></el-icon>
             </template>
           </el-input>
+          <p v-if="isRegisterMode" class="field-hint">{{ t('user.usernameRule') }}</p>
         </div>
 
         <div class="input-group">
@@ -109,6 +130,7 @@ function toggleMode() {
               </el-button>
             </template>
           </el-input>
+          <p v-if="isRegisterMode" class="field-hint">{{ t('user.passwordRule') }}</p>
         </div>
 
         <div v-if="isRegisterMode" class="input-group">
@@ -156,4 +178,11 @@ function toggleMode() {
 
 <style scoped lang="scss">
 @use '../../styles/components/auth/login-modal.scss' as *;
+
+.field-hint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
 </style>

@@ -8,12 +8,16 @@ import authController from './controllers/authController.js'
 import modelController from './controllers/modelController.js'
 import knowledgeController from './controllers/knowledgeController.js'
 import productController from './controllers/productController.js'
-import { requireAuth, checkApiUsage } from './middleware/authMiddleware.js'
+import { requireAuth } from './middleware/authMiddleware.js'
 import { rateLimiter } from './middleware/rateLimiter.js'
 import { seedKnowledgeBase } from './services/knowledge/seed.js'
 
 const app = express()
 const PORT = process.env.PORT || 3001
+
+// Behind the Vite proxy / a Cloudflare tunnel the client address is in
+// X-Forwarded-For; without this the login rate limiter would key on the proxy.
+app.set('trust proxy', 1)
 
 // ── Security: CORS whitelist ──────────────────────────────────────────
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'http://localhost:5175,http://localhost:5176,http://localhost:3001')
@@ -37,7 +41,8 @@ app.use(cors({
 }))
 
 // ── Security: hardening response headers ──────────────────────────────
-app.use((_req, res, next) => {
+app.use((req, _res, next) => {
+  const res = _res
   res.setHeader('X-Content-Type-Options', 'nosniff')
   res.setHeader('X-Frame-Options', 'DENY')
   res.setHeader('X-XSS-Protection', '0') // modern browsers: turn off legacy
@@ -50,6 +55,11 @@ app.use((_req, res, next) => {
     'Content-Security-Policy',
     "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://api.deepseek.com",
   )
+  // Authenticated JSON must never be served from a browser cache: a stale
+  // permission list or a revoked account would keep working from disk.
+  if (req.path.startsWith('/api/')) {
+    res.setHeader('Cache-Control', 'no-store')
+  }
   next()
 })
 
@@ -80,7 +90,7 @@ app.use('/api', productController)
 app.post('/api/client-error', rateLimiter({ windowMs: 60_000, max: 60 }), reportClientError)
 
 // API routes — require auth and track usage
-app.use('/api', rateLimiter({ windowMs: 60_000, max: 60 }), requireAuth, checkApiUsage, apiController)
+app.use('/api', rateLimiter({ windowMs: 60_000, max: 60 }), requireAuth, apiController)
 
 // ── Health / Info ─────────────────────────────────────────────────────
 app.get('/', (_req, res) => {

@@ -28,12 +28,35 @@ export class CloudflareEmbedder implements Embedder {
     this.aiBinding = aiBinding
   }
 
+  /**
+   * bge-m3 accepts an array of texts, so one call embeds a whole batch. The old
+   * loop issued one Workers AI request per chunk (~22 per document), which both
+   * burned the free plan's subrequest budget and made seeding slow. Batches are
+   * kept at 32 texts to stay well inside the model's input limits.
+   */
   async embed(texts: string[]): Promise<number[][]> {
     const results: number[][] = []
-    // Workers AI supports batch, but process one at a time for reliability
-    for (const text of texts) {
-      const response = await this.aiBinding.run(EMBEDDING_MODEL, { text })
-      results.push(response.data[0])
+    for (let start = 0; start < texts.length; start += 32) {
+      const batch = texts.slice(start, start + 32)
+      const response = await this.aiBinding.run(EMBEDDING_MODEL, { text: batch })
+      const data = response?.data
+
+      if (Array.isArray(data) && Array.isArray(data[0])) {
+        results.push(...(data as number[][]))
+        continue
+      }
+
+      // Older Workers AI responses (or a single-text input) come back as
+      // `data: number[]`. Fall back to one call per text so a shape change
+      // cannot silently drop every vector.
+      for (const text of batch) {
+        const single = await this.aiBinding.run(EMBEDDING_MODEL, { text })
+        const vector = single?.data?.[0] ?? single?.data
+        if (!Array.isArray(vector)) {
+          throw new Error('Embedding response did not contain a vector')
+        }
+        results.push(vector as number[])
+      }
     }
     return results
   }

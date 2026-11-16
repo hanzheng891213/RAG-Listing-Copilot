@@ -25,8 +25,10 @@ user does (router guards, API calls, generated DOM).
 & "C:\Program Files\Google\Chrome\Application\chrome.exe" --headless=new `
   --remote-debugging-port=9222 --user-data-dir="$env:TEMP\dsh-chrome-profile" about:blank
 
-# mint an admin token (dev secret is the one in backend/.dev.vars)
-cd backend; node -e "const jwt=require('jsonwebtoken');console.log(jwt.sign({userId:'admin-001',username:'admin',role:'admin'},'rag-copilot-jwt-secret-2026-dev',{expiresIn:'1h'}))"
+# log in with a real account and copy the JWT (no hardcoded dev secret)
+$body = @{ username = $env:SMOKE_USER; password = $env:SMOKE_PASSWORD } | ConvertTo-Json
+$token = (Invoke-RestMethod -Uri http://localhost:3001/api/auth/login `
+  -Method Post -ContentType application/json -Body $body).token
 ```
 
 Set `$env:DSH_SMOKE_TOKEN` to that value, then:

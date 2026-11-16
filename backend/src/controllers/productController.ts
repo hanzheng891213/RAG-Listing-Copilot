@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express'
-import { requireAuth } from '../middleware/authMiddleware.js'
+import { requireAuth, requirePermission, requireAnyPermission, type AuthedRequest } from '../middleware/authMiddleware.js'
 import { getProductService } from '../services/products/productService.js'
-import type { JwtPayload } from '../types/auth.js'
+import { computeFinanceSummary } from '../services/products/finance.js'
 
 /**
  * Express twin of the Worker's product-grid routes.
@@ -12,8 +12,9 @@ import type { JwtPayload } from '../types/auth.js'
  */
 const router = Router()
 
-// GET /api/products — public read, same shape as the Worker route.
-router.get('/products', async (req: Request, res: Response) => {
+// GET /api/products — auth is required now: the previous public read exposed
+// every owner's supplier rows to anyone who knew the URL.
+router.get('/products', requireAuth, requireAnyPermission(['productGrid', 'listingGenerator']), async (req: Request, res: Response) => {
   try {
     const page = Math.max(parseInt(String(req.query.page ?? '1'), 10) || 1, 1)
     const requested = parseInt(String(req.query.pageSize ?? '100'), 10) || 100
@@ -29,8 +30,8 @@ router.get('/products', async (req: Request, res: Response) => {
 })
 
 // POST /api/products/batch — authenticated, one request per save.
-router.post('/products/batch', requireAuth, async (req: Request, res: Response) => {
-  const user = (req as any).user as JwtPayload
+router.post('/products/batch', requireAuth, requirePermission('productGrid'), async (req: Request, res: Response) => {
+  const user = (req as AuthedRequest).authUser!
 
   try {
     const body = req.body ?? {}
@@ -45,7 +46,7 @@ router.post('/products/batch', requireAuth, async (req: Request, res: Response) 
     }
 
     const result = await getProductService(undefined).saveBatch({
-      actor: { userId: user.userId, userName: user.username, isAdmin: user.role === 'admin' },
+      actor: { userId: user.id, userName: user.username, isAdmin: user.role === 'admin' },
       items,
       deletedIds,
     })
@@ -55,6 +56,18 @@ router.post('/products/batch', requireAuth, async (req: Request, res: Response) 
     const message = err instanceof Error ? err.message : 'Batch save failed'
     const status = /too many|invalid|must be/i.test(message) ? 400 : 500
     res.status(status).json({ error: message, code: 'ERR_PRODUCT_BATCH' })
+  }
+})
+
+// GET /api/finance/summary — one query + one row scan, aggregated server-side.
+// The finance page is therefore a single request regardless of product count.
+router.get('/finance/summary', requireAuth, requirePermission('finance'), async (_req: Request, res: Response) => {
+  try {
+    const rows = await getProductService(undefined).financeRows(5000)
+    res.json(computeFinanceSummary(rows))
+  } catch (err) {
+    console.error('[Finance] Summary failed:', err)
+    res.status(500).json({ error: 'Failed to compute finance summary', code: 'ERR_FINANCE_SUMMARY' })
   }
 })
 

@@ -1,11 +1,10 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
-import type { UserInfo } from '@/api/auth'
-import { login as loginApi, fetchMe } from '@/api/auth'
+import type { PermissionKey, UserInfo } from '@/api/auth'
+import { login as loginApi, register as registerApi, fetchMe } from '@/api/auth'
 import { useModelStore } from '@/stores/modelStore'
 
 const TOKEN_STORAGE = 'rag-copilot-token'
-const REGISTERED_USERS_KEY = 'rag-copilot-registered-users'
 
 function loadToken(): string {
   try {
@@ -25,21 +24,6 @@ function persistToken(token: string) {
   } catch { /* storage unavailable */ }
 }
 
-function loadRegisteredUsers(): Record<string, { password: string; user: UserInfo }> {
-  try {
-    const data = localStorage.getItem(REGISTERED_USERS_KEY)
-    return data ? JSON.parse(data) : {}
-  } catch {
-    return {}
-  }
-}
-
-function persistRegisteredUsers(users: Record<string, { password: string; user: UserInfo }>) {
-  try {
-    localStorage.setItem(REGISTERED_USERS_KEY, JSON.stringify(users))
-  } catch { /* storage unavailable */ }
-}
-
 export const useAuthStore = defineStore('auth', () => {
   // --- User auth state ---
   const token = ref(loadToken())
@@ -50,72 +34,48 @@ export const useAuthStore = defineStore('auth', () => {
   const isLoggedIn = computed(() => !!token.value && !!user.value)
   const isAdmin = computed(() => user.value?.role === 'admin')
 
+  /** Server-granted page permissions. Admins implicitly hold all of them. */
+  const permissions = computed<PermissionKey[]>(() => {
+    if (!user.value) return []
+    return user.value.role === 'admin'
+      ? ['productGrid', 'listingGenerator', 'knowledgeBase', 'modelManager', 'finance']
+      : user.value.permissions
+  })
+
+  function hasPermission(permission: PermissionKey): boolean {
+    return permissions.value.includes(permission)
+  }
+
   function setToken(newToken: string) {
     token.value = newToken
     persistToken(newToken)
   }
 
-  // Hardcoded credentials — frontend fallback when backend is unavailable
-  const MOCK_USERS: Record<string, { password: string; user: UserInfo }> = {
-    'hanzheng891213@gmail.com': {
-      password: 'handsandblog@110',
-      user: { id: 'admin-001', username: 'hanzheng891213@gmail.com', role: 'admin', apiCallCount: 0, createdAt: '2026-05-31T00:00:00.000Z' },
-    },
-    'O_O@visitor.com': {
-      password: '123@456vst',
-      user: { id: 'visitor-001', username: 'O_O@visitor.com', role: 'user', apiCallCount: 0, createdAt: '2026-05-31T00:00:00.000Z' },
-    },
+  /**
+   * Register through the API. The server owns uniqueness (case-insensitive),
+   * password policy and the new account's zero-permission starting state.
+   */
+  async function register(username: string, password: string): Promise<UserInfo> {
+    authLoading.value = true
+    try {
+      const res = await registerApi({ username, password })
+      setToken(res.token)
+      user.value = res.user
+      showLoginModal.value = false
+      return res.user
+    } finally {
+      authLoading.value = false
+    }
   }
 
-  /** 注册新用户，信息仅存储在客户端 localStorage */
-  function register(username: string, password: string): boolean {
-    const registered = loadRegisteredUsers()
-    if (registered[username]) {
-      return false // 用户名已存在
-    }
-    const newUser: UserInfo = {
-      id: 'user-' + Date.now(),
-      username,
-      role: 'user',
-      apiCallCount: 0,
-      createdAt: new Date().toISOString(),
-    }
-    registered[username] = { password, user: newUser }
-    persistRegisteredUsers(registered)
-
-    // 注册后自动登录
-    setToken('local-jwt-' + newUser.id)
-    user.value = newUser
-    showLoginModal.value = false
-    return true
-  }
-
-  async function login(username: string, password: string) {
+  async function login(username: string, password: string): Promise<UserInfo> {
     authLoading.value = true
     try {
       const res = await loginApi({ username, password })
       setToken(res.token)
       user.value = res.user
       showLoginModal.value = false
-    } catch (e: any) {
-      // Fallback to mock login when backend is unreachable
-      const mock = MOCK_USERS[username]
-      if (mock && mock.password === password) {
-        setToken('mock-jwt-' + mock.user.id)
-        user.value = mock.user
-        showLoginModal.value = false
-      } else {
-        // Fallback to registered users in localStorage
-        const registered = loadRegisteredUsers()
-        const regUser = registered[username]
-        if (regUser && regUser.password === password) {
-          setToken('local-jwt-' + regUser.user.id)
-          user.value = regUser.user
-          showLoginModal.value = false
-        } else {
-          throw e
-        }
-      }
+      return res.user
     } finally {
       authLoading.value = false
     }
@@ -155,36 +115,14 @@ export const useAuthStore = defineStore('auth', () => {
     showLoginModal.value = false
   }
 
-  /**
-   * Accounts the app currently knows about: the built-in demo users, accounts
-   * registered in this browser, and the signed-in user. Used by the permission
-   * page; passwords never leave this function.
-   */
-  function listKnownUsers(): UserInfo[] {
-    const byName = new Map<string, UserInfo>()
-
-    for (const entry of Object.values(MOCK_USERS)) {
-      byName.set(entry.user.username.toLowerCase(), entry.user)
-    }
-    for (const entry of Object.values(loadRegisteredUsers())) {
-      const key = entry.user.username.toLowerCase()
-      if (!byName.has(key)) byName.set(key, entry.user)
-    }
-    if (user.value) byName.set(user.value.username.toLowerCase(), user.value)
-
-    return [...byName.values()].sort((a, b) => {
-      if (a.role !== b.role) return a.role === 'admin' ? -1 : 1
-      return a.createdAt.localeCompare(b.createdAt)
-    })
-  }
-
   // ── Per-account model configuration ─────────────────────────────────
-  // The model store namespaces its API keys by login identity. Bind it here so
-  // every login / refresh / logout path switches the key set automatically.
+  // Configs are server-scoped by user id. On every identity change the model
+  // store drops the previous account's list (so it can never flash another
+  // user's provider) and reloads this account's configs.
   watch(
     user,
     (next) => {
-      useModelStore().bindUser(next?.id ?? '')
+      void useModelStore().onUserChanged(next?.id ?? '')
     },
     { immediate: true },
   )
@@ -194,20 +132,30 @@ export const useAuthStore = defineStore('auth', () => {
     refreshUser()
   }
 
+  // The axios interceptor clears the token on 401; mirror that in memory so the
+  // header switches to "logged out" without a reload.
+  if (typeof window !== 'undefined') {
+    window.addEventListener('rag-auth-expired', () => {
+      if (!token.value && !user.value) return
+      user.value = null
+      token.value = ''
+    })
+  }
+
   return {
-    // User auth
     token,
     user,
     showLoginModal,
     authLoading,
     isLoggedIn,
     isAdmin,
+    permissions,
+    hasPermission,
     register,
     login,
     refreshUser,
     logout,
     openLoginModal,
     closeLoginModal,
-    listKnownUsers,
   }
 })

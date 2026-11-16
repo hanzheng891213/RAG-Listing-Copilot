@@ -17,11 +17,9 @@ command = "npm run build"
 [ai]
 binding = "AI"
 
-# Metadata filtering is a no-op until the property has a metadata index — a
-# filter on an unindexed property silently matches zero vectors. After creating
-# or recreating this index, run:
-#   npx wrangler vectorize create-metadata-index knowledge-chunks-prod --property-name=platform --type=string
-# Vectors upserted before the index existed stay unfilterable until re-upserted.
+# Platform filtering happens in application code (a metadata index is not
+# required). Keeping it that way avoids the silent "index missing => zero
+# matches" failure mode that leaves generation without RAG grounding.
 [[vectorize]]
 binding = "KNOWLEDGE_INDEX"
 index_name = "knowledge-chunks-prod"
@@ -32,5 +30,11 @@ database_name = "rag-listing-copilot"
 database_id = "2ab38a1a-72b5-4cc7-be75-eb1c07931ec6"
 migrations_dir = "migrations"
 
-[vars]
-JWT_SECRET = "rag-copilot-jwt-secret-2026-dev"
+# Secrets are NOT stored in this file. Set them once per environment:
+#
+#   npx wrangler secret put JWT_SECRET        # openssl rand -hex 32
+#   npx wrangler secret put CONFIG_ENC_KEY    # openssl rand -base64 32
+#   npx wrangler secret put ALLOWED_ORIGINS   # https://your-domain (optional)
+#
+# The Worker fails closed when JWT_SECRET is missing, and returns 503 when
+# CONFIG_ENC_KEY is missing instead of silently storing keys in plaintext.

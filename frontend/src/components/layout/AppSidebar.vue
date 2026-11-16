@@ -28,6 +28,7 @@ const BASE_NAV_ITEMS: NavItem[] = [
   { path: '/listing-generator', labelKey: 'nav.listingGenerator', icon: 'MagicStick', permission: 'listingGenerator' },
   { path: '/knowledge-base', labelKey: 'nav.knowledgeBase', icon: 'Collection', permission: 'knowledgeBase' },
   { path: '/model-manager', labelKey: 'nav.modelManager', icon: 'Cpu', permission: 'modelManager' },
+  { path: '/finance', labelKey: 'nav.finance', icon: 'TrendCharts', permission: 'finance' },
   { path: '/permission-settings', labelKey: 'nav.permissionSettings', icon: 'Lock', requiresAdmin: true },
 ]
 

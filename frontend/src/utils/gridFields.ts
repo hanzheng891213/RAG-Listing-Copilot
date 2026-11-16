@@ -65,6 +65,54 @@ export const CORE_FIELDS: GridField[] = [
     type: 'text',
     core: true,
   },
+  // Cost columns feed the finance dashboard. They stay in the same dynamic
+  // `fields` JSON as everything else, so imported sheets that already carry
+  // these headers map onto them and no schema migration is needed.
+  {
+    key: 'costPrice',
+    label: '采购成本',
+    labelKey: 'grid.columns.costPrice',
+    width: 110,
+    type: 'number',
+    align: 'right',
+    core: true,
+  },
+  {
+    key: 'shippingCost',
+    label: '头程运费',
+    labelKey: 'grid.columns.shippingCost',
+    width: 110,
+    type: 'number',
+    align: 'right',
+    core: true,
+  },
+  {
+    key: 'commissionRate',
+    label: '佣金率(%)',
+    labelKey: 'grid.columns.commissionRate',
+    width: 110,
+    type: 'number',
+    align: 'right',
+    core: true,
+  },
+  {
+    key: 'adCost',
+    label: '广告费',
+    labelKey: 'grid.columns.adCost',
+    width: 100,
+    type: 'number',
+    align: 'right',
+    core: true,
+  },
+  {
+    key: 'otherCost',
+    label: '其他成本',
+    labelKey: 'grid.columns.otherCost',
+    width: 110,
+    type: 'number',
+    align: 'right',
+    core: true,
+  },
   {
     key: 'moq',
     label: '起订量',
@@ -117,6 +165,19 @@ export const REQUIRED_FIELDS = ['sku', 'productName'] as const
 
 /** Fields the listing generator produces; regenerating ignores them as input. */
 export const GENERATED_FIELDS = ['title', 'description', 'bulletPoints', 'keywords'] as const
+
+/**
+ * Internal cost columns. They must never be sent to the AI provider: they are
+ * commercially sensitive and irrelevant to the listing copy, and every token
+ * sent is billed.
+ */
+export const COST_FIELDS = [
+  'costPrice',
+  'shippingCost',
+  'commissionRate',
+  'adCost',
+  'otherCost',
+] as const
 
 /**
  * True once a row carries generated listing details. A supplier sheet may
@@ -366,6 +427,40 @@ const HEADER_ALIASES: Record<string, string> = {
   货币: 'currency',
   currency: 'currency',
 
+  采购成本: 'costPrice',
+  成本价: 'costPrice',
+  成本: 'costPrice',
+  costprice: 'costPrice',
+  'cost price': 'costPrice',
+  cost: 'costPrice',
+
+  头程运费: 'shippingCost',
+  运费: 'shippingCost',
+  物流费: 'shippingCost',
+  shippingcost: 'shippingCost',
+  'shipping cost': 'shippingCost',
+  shipping: 'shippingCost',
+  freight: 'shippingCost',
+
+  佣金率: 'commissionRate',
+  佣金比例: 'commissionRate',
+  佣金: 'commissionRate',
+  commissionrate: 'commissionRate',
+  'commission rate': 'commissionRate',
+  commission: 'commissionRate',
+
+  广告费: 'adCost',
+  广告成本: 'adCost',
+  adcost: 'adCost',
+  'ad cost': 'adCost',
+  'ad spend': 'adCost',
+
+  其他成本: 'otherCost',
+  其它成本: 'otherCost',
+  杂费: 'otherCost',
+  othercost: 'otherCost',
+  'other cost': 'otherCost',
+
   起订量: 'moq',
   最小起订量: 'moq',
   moq: 'moq',
@@ -426,12 +521,12 @@ export function normaliseImportRecord(record: Record<string, string>): Record<st
   return out
 }
 
-/** Fields sent to the generator: source columns only, never past output. */
+/** Fields sent to the generator: source columns only, never past output or costs. */
 export function sourceFields(fields: Record<string, string>): Record<string, string> {
-  const generated = new Set<string>(GENERATED_FIELDS)
+  const excluded = new Set<string>([...GENERATED_FIELDS, ...COST_FIELDS])
   const out: Record<string, string> = {}
   for (const [key, value] of Object.entries(fields ?? {})) {
-    if (generated.has(key)) continue
+    if (excluded.has(key)) continue
     if (!value) continue
     out[key] = value
   }

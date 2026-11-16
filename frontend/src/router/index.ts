@@ -62,6 +62,17 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
+    path: '/finance',
+    name: 'FinanceDashboard',
+    component: () => import('@/views/FinanceDashboard.vue'),
+    meta: {
+      titleKey: 'nav.finance',
+      icon: 'TrendCharts',
+      requiresAuth: true,
+      permission: 'finance',
+    },
+  },
+  {
     path: '/permission-settings',
     name: 'PermissionSettings',
     component: () => import('@/views/PermissionSettings.vue'),

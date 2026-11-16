@@ -146,7 +146,6 @@ onUnmounted(() => {
 })
 
 onMounted(async () => {
-  modelStore.loadConfigs()
   try {
     await loadAll()
     hydrateTabs()

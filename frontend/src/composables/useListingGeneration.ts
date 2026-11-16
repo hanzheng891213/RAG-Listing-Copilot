@@ -42,6 +42,9 @@ export function useListingGeneration() {
       id: target.id,
       rawData: sourceFields(target.fields),
     }
+    // The server resolves model, temperature and key from the caller's stored
+    // config; sending them from the browser would let a client raise its own
+    // token budget and leak the provider key into the request log.
     return {
       productId: target.id,
       platform: targetPlatform ?? platform.value,
@@ -49,10 +52,6 @@ export function useListingGeneration() {
       productData: product,
       providerId: cfg?.providerId,
       language,
-      apiKey: cfg?.apiKey,
-      model: cfg?.activeModel,
-      temperature: cfg?.temperature,
-      maxTokens: cfg?.maxTokens,
     }
   }
 
@@ -97,6 +96,7 @@ export function useListingGeneration() {
     language: string,
     targetPlatform?: Platform,
   ): Promise<GeneratedListing> {
+    if (!modelStore.loaded) await modelStore.loadConfigs()
     if (!modelStore.hasAnyConfigured) {
       throw new Error('NO_MODEL')
     }

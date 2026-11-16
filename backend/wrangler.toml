@@ -20,15 +20,15 @@ database_id = "2ab38a1a-72b5-4cc7-be75-eb1c07931ec6"
 migrations_dir = "../migrations"
 
 # ─── Production Environment ─────────────────────────────────────────
+# Secrets are set with `wrangler secret put`, never stored in this file:
+#   JWT_SECRET, CONFIG_ENC_KEY, ALLOWED_ORIGINS
+# The Worker fails closed when JWT_SECRET / CONFIG_ENC_KEY are missing.
 [env.production]
-vars = { JWT_SECRET = "rag-copilot-jwt-secret-2026-dev" }
 
 [env.production.ai]
 binding = "AI"
 
-# See the note in the root wrangler.toml: metadata filtering needs an explicit
-# metadata index on the property, created via `wrangler vectorize
-# create-metadata-index <index> --property-name=platform --type=string`.
+# Retrieval filters platform in code, so no Vectorize metadata index is required.
 [[env.production.vectorize]]
 binding = "KNOWLEDGE_INDEX"
 index_name = "knowledge-chunks-prod"

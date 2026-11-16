@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express'
 import multer from 'multer'
 import { getKnowledgeService, type KnowledgeService } from '../services/knowledge/knowledgeService.js'
-import { requireAuth, requireAdmin } from '../middleware/authMiddleware.js'
+import { requireAuth, requireAdmin, requirePermission } from '../middleware/authMiddleware.js'
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -14,7 +14,7 @@ function getKs(): KnowledgeService {
   return getKnowledgeService()
 }
 
-router.get('/search', async (req: Request, res: Response) => {
+router.get('/search', requireAuth, requirePermission('knowledgeBase'), async (req: Request, res: Response) => {
   try {
     const { query, platform } = req.query
     const ks = getKs()
@@ -28,7 +28,7 @@ router.get('/search', async (req: Request, res: Response) => {
   }
 })
 
-router.get('/documents', async (req: Request, res: Response) => {
+router.get('/documents', requireAuth, requirePermission('knowledgeBase'), async (req: Request, res: Response) => {
   try {
     const { category, platform } = req.query
     const ks = getKs()
@@ -43,7 +43,7 @@ router.get('/documents', async (req: Request, res: Response) => {
   }
 })
 
-router.get('/documents/:id', async (req: Request, res: Response) => {
+router.get('/documents/:id', requireAuth, requirePermission('knowledgeBase'), async (req: Request, res: Response) => {
   try {
     const ks = getKs()
     const doc = await ks.getDocument(req.params.id as string)
@@ -58,7 +58,7 @@ router.get('/documents/:id', async (req: Request, res: Response) => {
   }
 })
 
-// Writes are admin-only; reads above stay public.
+// Reads require the knowledgeBase permission; writes are admin-only.
 router.post('/upload', requireAuth, requireAdmin, upload.single('file'), async (req: Request, res: Response) => {
   try {
     const { title, category, platform, tags: tagsStr } = req.body
@@ -133,7 +133,7 @@ router.delete('/documents/:id', requireAuth, requireAdmin, async (req: Request, 
   }
 })
 
-router.get('/stats', async (req: Request, res: Response) => {
+router.get('/stats', requireAuth, requirePermission('knowledgeBase'), async (req: Request, res: Response) => {
   try {
     const ks = getKs()
     const stats = await ks.getStats()

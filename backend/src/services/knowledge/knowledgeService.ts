@@ -72,9 +72,9 @@ class DocumentStore {
 // ─── Knowledge Service ────────────────────────────────────────────────
 
 /**
- * Retrieval is fetched as one wide pool and then split by category, rather than
- * run as two filtered queries: `category` is only filterable via a Vectorize
- * metadata index, and the pool approach needs no index and no re-upsert.
+ * Retrieval is fetched as one wide pool and then split by category/platform in
+ * code. A Vectorize metadata filter would require a metadata index; without one
+ * (the default) it silently matches nothing, so the filter lives here instead.
  *
  * The pool has to be wide because template documents embed product examples in
  * their body, so a product query scores them above the policy documents — at
@@ -255,22 +255,31 @@ export class KnowledgeService {
     options?: { platform?: string; topK?: number },
   ): Promise<KnowledgeSearchResult[]> {
     const queryEmbedding = await this.embedder.embed([query])
-    const filter: Record<string, string> = {}
-    if (options?.platform) {
-      filter.platform = options.platform
-    }
 
-    const results = await this.vectorStore.query(queryEmbedding[0], {
-      topK: options?.topK ?? 5,
-      filter: Object.keys(filter).length > 0 ? filter : undefined,
-    })
+    // Do NOT use a Vectorize metadata filter here. Filtering on `platform`
+    // requires a metadata index; without one (the default) Vectorize silently
+    // returns zero matches and the generation prompt loses all grounding. Query
+    // a wider pool and filter in code instead — same cost, no index dependency.
+    const requestedTopK = options?.topK ?? 5
+    const topK = options?.platform
+      ? Math.min(Math.max(requestedTopK * 4, requestedTopK), 50)
+      : requestedTopK
+
+    const results = await this.vectorStore.query(queryEmbedding[0], { topK })
+    const platform = options?.platform
+    const matched = platform
+      ? results.filter((result) => result.metadata.platform === platform)
+      : results
+    // Keep score order; a platform with no indexed chunks yields an empty
+    // context, which the prompt builder handles with its built-in rules.
+    const pool = matched
 
     // A wide pool returns many chunks from the same few documents, and each miss
     // costs a D1 round trip. Cache per call so each document is fetched once.
     const docCache = new Map<string, DocRecord | null>()
 
     const searchResults: KnowledgeSearchResult[] = []
-    for (const r of results) {
+    for (const r of pool) {
       const docId = r.metadata.documentId
       if (!docId) continue
 

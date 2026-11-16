@@ -33,10 +33,6 @@ client.interceptors.request.use((config) => {
     if (token) {
       config.headers['Authorization'] = `Bearer ${token}`
     }
-    const activeProvider = localStorage.getItem('rag-copilot-active-provider')
-    if (activeProvider) {
-      config.headers['X-Active-Provider'] = activeProvider
-    }
   } catch {
     // localStorage unavailable
   }
@@ -49,9 +45,15 @@ client.interceptors.request.use((config) => {
 client.interceptors.response.use(
   (response) => response,
   async (error) => {
-    if (error?.response?.status === 401) {
+    const url = String(error?.config?.url ?? '')
+    const isCredentialCall = url.includes('/auth/login') || url.includes('/auth/register')
+    if (error?.response?.status === 401 && !isCredentialCall) {
       try {
         localStorage.removeItem('rag-copilot-token')
+        // The auth store listens for this so the header/route guard reflect the
+        // expired session immediately instead of showing a logged-in shell whose
+        // every request fails.
+        window.dispatchEvent(new CustomEvent('rag-auth-expired'))
       } catch { /* ignore */ }
     }
     return Promise.reject(error)

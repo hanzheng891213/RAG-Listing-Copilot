@@ -5,8 +5,12 @@ import { deepseekService } from '../services/deepseek/deepseekService.js'
 import { ragService } from '../services/rag/ragService.js'
 import { modelService } from '../services/model/modelService.js'
 import { getKnowledgeService, type KnowledgeService } from '../services/knowledge/knowledgeService.js'
+import { getModelConfigService } from '../services/model/modelConfigService.js'
+import { ConfigError } from '../services/model/modelConfigService.js'
+import { ConfigKeyMissingError } from '../services/model/configCrypto.js'
+import { SchemaMissingError } from '../services/auth/userService.js'
 import type { Platform } from '../types/index.js'
-import type { JwtPayload } from '../types/auth.js'
+import type { AuthedRequest } from '../middleware/authMiddleware.js'
 import { extractListingFields, normalizeListingFields, parseFinalJson, streamDemoSse, type NormalizedListing } from '../utils/listingStream.js'
 
 const upload = multer({
@@ -43,8 +47,37 @@ async function buildGroundedPrompt(
   return deepseekService.buildPromptForProvider(productData, platform, template, language, knowledge)
 }
 
-function isAdmin(req: Request): boolean {
-  return ((req as any).user as JwtPayload)?.role === 'admin'
+function actorOf(req: Request): { id: string; role: 'admin' | 'user'; permissions: string[] } {
+  const user = (req as AuthedRequest).authUser
+  return {
+    id: user?.id ?? '',
+    role: user?.role === 'admin' ? 'admin' : 'user',
+    permissions: user?.permissions ?? [],
+  }
+}
+
+function can(req: Request, permission: string): boolean {
+  const actor = actorOf(req)
+  return actor.role === 'admin' || actor.permissions.includes(permission)
+}
+
+function configFailure(res: Response, err: unknown): boolean {
+  if (err instanceof ConfigError) {
+    res.status(err.status).json({ error: err.message, code: err.code })
+    return true
+  }
+  if (err instanceof ConfigKeyMissingError) {
+    res.status(503).json({
+      error: 'Server configuration is incomplete: CONFIG_ENC_KEY is not set',
+      code: 'ERR_CONFIG_KEY_MISSING',
+    })
+    return true
+  }
+  if (err instanceof SchemaMissingError) {
+    res.status(503).json({ error: err.message, code: 'ERR_DB_SCHEMA' })
+    return true
+  }
+  return false
 }
 
 /** Model output → the four listing fields, tolerating code fences. */
@@ -99,133 +132,135 @@ router.post('/parse-supplier', (req: Request, res: Response) => {
 })
 
 // POST /api/generate-listing - Generate listing
-// apiKey is passed from frontend per-request, NEVER stored on server
+// The API key never travels with the request: providerId selects the caller's
+// encrypted config, and the server decrypts it for this call only.
 router.post('/generate-listing', async (req: Request, res: Response) => {
   try {
-    const { productId, platform, template, productData, providerId, language, apiKey, model, temperature, maxTokens } = req.body
+    const actor = actorOf(req)
+    if (!can(req, 'listingGenerator')) {
+      res.status(403).json({ error: 'You do not have permission to use this page', code: 'ERR_PERMISSION_DENIED' })
+      return
+    }
+
+    const { productId, platform, template, productData, providerId, language } = req.body
 
     if (!productData) {
       res.status(400).json({ error: 'productData is required', code: 'ERR_MISSING_PRODUCT_DATA' })
       return
     }
 
-    // Visitors always get demo data
-    if (!isAdmin(req)) {
-      console.log('[API] Visitor generate — forcing demo mode')
-      const demoListing = await deepseekService.generateListing(
-        productData,
-        (platform as Platform) || 'amazon',
-        template || 'standard',
-        undefined, // no apiKey → demo
-        language,
-      )
-      res.json(demoListing)
-      return
-    }
-
-    // Admin: apiKey must be provided by frontend (NOT stored on server)
-    if (!apiKey) {
+    const resolved = await getModelConfigService().resolve(actor.id, providerId)
+    if (!resolved) {
+      if (actor.role !== 'admin') {
+        console.log('[API] No model configured — demo listing')
+        const demoListing = await deepseekService.generateListing(
+          productData,
+          (platform as Platform) || 'amazon',
+          template || 'standard',
+          undefined,
+          language,
+        )
+        res.json(demoListing)
+        return
+      }
       res.status(400).json({ error: 'API key is required. Please configure it in Model Manager.', code: 'ERR_NO_API_KEY' })
       return
     }
 
-    console.log('[API] Admin generate — provider:', providerId, 'model:', model)
-    try {
-      const prompt = await buildGroundedPrompt(productData, platform, template, language)
-      const provider = providerId || 'deepseek'
-      const options = {
-        model,
-        temperature,
-        max_tokens: maxTokens,
-        disableThinking: provider === 'deepseek',
-      }
-
-      const data = await modelService.callProviderAPI(
-        provider,
-        apiKey,
-        deepseekService.buildMessages(prompt, language),
-        options,
-      )
-
-      if (!data) {
-        res.status(502).json({ error: 'AI API error. Please check your API key and model configuration.', code: 'ERR_AI_API' })
-        return
-      }
-
-      let listing = parseListing(data.choices?.[0]?.message?.content)
-
-      // One corrective retry: a listing written in the wrong language is not
-      // something the table can hold, and a second, stricter call is cheaper
-      // than shipping it.
-      if (deepseekService.hasLanguageDrift(listing, language)) {
-        console.warn(
-          `[API] Language drift (target=${language || 'english'}) — retrying once: "${listing.title.slice(0, 60)}"`,
-        )
-        const retry = await modelService.callProviderAPI(
-          provider,
-          apiKey,
-          deepseekService.buildMessages(prompt, language, { languageRetry: true }),
-          // Low temperature: the retry must not rewrite the content, only the language.
-          { ...options, temperature: 0.2 },
-        )
-        const repaired = retry ? parseListing(retry.choices?.[0]?.message?.content) : null
-        if (repaired && (repaired.title || repaired.description)) {
-          listing = repaired
-        }
-        if (deepseekService.hasLanguageDrift(listing, language)) {
-          console.warn('[API] Language retry did not produce the target language')
-        }
-      }
-
-      const ks = getKs()
-      const complianceResults = await ks.checkCompliance(
-        [listing.title, ...listing.bulletPoints, listing.description].join(' '),
-        platform,
-      )
-
-      res.json({
-        id: 'gen-' + Date.now(),
-        productId,
-        title: listing.title,
-        bulletPoints: listing.bulletPoints,
-        description: listing.description,
-        keywords: listing.keywords,
-        seoScore: 85,
-        complianceResults,
-        platform: platform || 'amazon',
-        template: template || 'standard',
-        version: 1,
-        createdAt: new Date().toISOString(),
-        isDemo: false,
-      })
-    } catch (err) {
-      console.error('[API] Generate failed:', err)
-      res.status(500).json({ error: 'Failed to generate listing', code: 'ERR_GENERATE_LISTING' })
+    const prompt = await buildGroundedPrompt(productData, platform, template, language)
+    const options = {
+      model: resolved.model,
+      temperature: resolved.temperature,
+      max_tokens: resolved.maxTokens,
+      baseUrl: resolved.baseUrl,
+      disableThinking: resolved.providerId === 'deepseek' || /deepseek/i.test(resolved.baseUrl),
     }
+
+    const data = await modelService.callProviderAPI(
+      resolved.providerId,
+      resolved.apiKey,
+      deepseekService.buildMessages(prompt, language),
+      options,
+    )
+
+    if (!data) {
+      res.status(502).json({ error: 'AI API error. Please check your API key and model configuration.', code: 'ERR_AI_API' })
+      return
+    }
+
+    let listing = parseListing(data.choices?.[0]?.message?.content)
+
+    // One corrective retry: a listing written in the wrong language is not
+    // something the table can hold, and a second, stricter call is cheaper
+    // than shipping it.
+    if (deepseekService.hasLanguageDrift(listing, language)) {
+      console.warn(
+        `[API] Language drift (target=${language || 'english'}) — retrying once: "${listing.title.slice(0, 60)}"`,
+      )
+      const retry = await modelService.callProviderAPI(
+        resolved.providerId,
+        resolved.apiKey,
+        deepseekService.buildMessages(prompt, language, { languageRetry: true }),
+        // Low temperature: the retry must not rewrite the content, only the language.
+        { ...options, temperature: 0.2 },
+      )
+      const repaired = retry ? parseListing(retry.choices?.[0]?.message?.content) : null
+      if (repaired && (repaired.title || repaired.description)) {
+        listing = repaired
+      }
+      if (deepseekService.hasLanguageDrift(listing, language)) {
+        console.warn('[API] Language retry did not produce the target language')
+      }
+    }
+
+    const ks = getKs()
+    const complianceResults = await ks.checkCompliance(
+      [listing.title, ...listing.bulletPoints, listing.description].join(' '),
+      platform,
+    )
+
+    res.json({
+      id: 'gen-' + Date.now(),
+      productId,
+      title: listing.title,
+      bulletPoints: listing.bulletPoints,
+      description: listing.description,
+      keywords: listing.keywords,
+      seoScore: 85,
+      complianceResults,
+      platform: platform || 'amazon',
+      template: template || 'standard',
+      version: 1,
+      createdAt: new Date().toISOString(),
+      isDemo: false,
+    })
   } catch (error) {
+    if (configFailure(res, error)) return
     console.error('Generate error:', error)
     res.status(500).json({ error: 'Failed to generate listing', code: 'ERR_GENERATE_LISTING' })
   }
 })
 
 // POST /api/chat-listing - AI chat (SSE streaming)
-// apiKey is passed from frontend per-request, NEVER stored on server
+// The key is resolved from the caller's encrypted config; it is never sent in
+// the request body or returned to the browser.
 router.post('/chat-listing', async (req: Request, res: Response) => {
-  // Visitors cannot use chat
-  if (!isAdmin(req)) {
-    res.status(403).json({ error: 'Chat is only available for admin users', code: 'ERR_VISITOR_DENIED' })
+  if (!can(req, 'listingGenerator')) {
+    res.status(403).json({ error: 'You do not have permission to use this page', code: 'ERR_PERMISSION_DENIED' })
     return
   }
 
   try {
-    const { messages, listingContext, providerId, apiKey, model, temperature, maxTokens } = req.body
+    const actor = actorOf(req)
+    const { messages, listingContext, providerId } = req.body
 
     if (!messages || !Array.isArray(messages)) {
       res.status(400).json({ error: 'messages array is required', code: 'ERR_MISSING_MESSAGES' })
       return
     }
 
-    if (!apiKey) {
+    const resolved = await getModelConfigService().resolve(actor.id, providerId)
+    if (!resolved) {
       res.status(400).json({ error: 'API key is required.', code: 'ERR_NO_API_KEY' })
       return
     }
@@ -243,13 +278,18 @@ router.post('/chat-listing', async (req: Request, res: Response) => {
 
     try {
       for await (const chunk of modelService.callProviderAPIStream(
-        providerId || 'deepseek',
-        apiKey,
+        resolved.providerId,
+        resolved.apiKey,
         [
           { role: 'system', content: systemMsg },
           ...messages,
         ],
-        { model, temperature, max_tokens: maxTokens },
+        {
+          model: resolved.model,
+          temperature: resolved.temperature,
+          max_tokens: resolved.maxTokens,
+          baseUrl: resolved.baseUrl,
+        },
       )) {
         res.write(`data: ${JSON.stringify({ type: 'chunk', content: chunk })}\n\n`)
       }
@@ -262,6 +302,7 @@ router.post('/chat-listing', async (req: Request, res: Response) => {
       res.end()
     }
   } catch (error) {
+    if (configFailure(res, error)) return
     console.error('Chat error:', error)
     res.status(500).json({ error: 'Failed to process chat message', code: 'ERR_CHAT_FAILED' })
   }
@@ -270,15 +311,15 @@ router.post('/chat-listing', async (req: Request, res: Response) => {
 // POST /api/chat-listing/apply - turn one optimisation direction into a full
 // listing patch. Chat replies are prose; "apply" needs structured fields, so
 // this is a separate, deterministic (low-temperature, JSON-only) call.
-// apiKey is passed from frontend per-request, NEVER stored on server.
 router.post('/chat-listing/apply', async (req: Request, res: Response) => {
-  if (!isAdmin(req)) {
-    res.status(403).json({ error: 'Chat is only available for admin users', code: 'ERR_VISITOR_DENIED' })
+  if (!can(req, 'listingGenerator')) {
+    res.status(403).json({ error: 'You do not have permission to use this page', code: 'ERR_PERMISSION_DENIED' })
     return
   }
 
   try {
-    const { direction, suggestion, listing, providerId, apiKey, model, maxTokens } = req.body
+    const actor = actorOf(req)
+    const { direction, suggestion, listing, providerId } = req.body
 
     if (!direction || typeof direction !== 'string') {
       res.status(400).json({ error: 'direction is required', code: 'ERR_MISSING_DIRECTION' })
@@ -288,7 +329,9 @@ router.post('/chat-listing/apply', async (req: Request, res: Response) => {
       res.status(400).json({ error: 'listing is required', code: 'ERR_MISSING_LISTING' })
       return
     }
-    if (!apiKey) {
+
+    const resolved = await getModelConfigService().resolve(actor.id, providerId)
+    if (!resolved) {
       res.status(400).json({ error: 'API key is required.', code: 'ERR_NO_API_KEY' })
       return
     }
@@ -316,18 +359,20 @@ router.post('/chat-listing/apply', async (req: Request, res: Response) => {
       '\nReturn the full updated listing as strict JSON.'
 
     const data = await modelService.callProviderAPI(
-      providerId || 'deepseek',
-      apiKey,
+      resolved.providerId,
+      resolved.apiKey,
       [
         { role: 'system', content: systemMsg },
         { role: 'user', content: userMsg },
       ],
       {
-        model,
+        model: resolved.model,
         // Structured rewrite: low temperature keeps untouched fields stable.
         temperature: 0.3,
-        max_tokens: maxTokens,
-        disableThinking: (providerId || 'deepseek') === 'deepseek',
+        max_tokens: resolved.maxTokens,
+        baseUrl: resolved.baseUrl,
+        disableThinking:
+          resolved.providerId === 'deepseek' || /deepseek/i.test(resolved.baseUrl),
       },
     )
 
@@ -351,6 +396,7 @@ router.post('/chat-listing/apply', async (req: Request, res: Response) => {
 
     res.json({ patch: normalizeListingFields(parsed) })
   } catch (error) {
+    if (configFailure(res, error)) return
     console.error('Chat apply error:', error)
     res.status(500).json({ error: 'Failed to apply the suggestion', code: 'ERR_CHAT_FAILED' })
   }
@@ -370,15 +416,22 @@ router.post('/check-compliance', async (req: Request, res: Response) => {
 })
 
 // POST /api/generate-listing/stream - Streaming generate listing (SSE)
-// apiKey is passed from frontend per-request, NEVER stored on server
 router.post('/generate-listing/stream', async (req: Request, res: Response) => {
   try {
-    const { productId, platform, template, productData, providerId, language, apiKey, model, temperature, maxTokens } = req.body
+    if (!can(req, 'listingGenerator')) {
+      res.status(403).json({ error: 'You do not have permission to use this page', code: 'ERR_PERMISSION_DENIED' })
+      return
+    }
+
+    const actor = actorOf(req)
+    const { productId, platform, template, productData, providerId, language } = req.body
 
     if (!productData) {
       res.status(400).json({ error: 'productData is required', code: 'ERR_MISSING_PRODUCT_DATA' })
       return
     }
+
+    const resolved = await getModelConfigService().resolve(actor.id, providerId)
 
     // Set SSE headers
     res.setHeader('Content-Type', 'text/event-stream')
@@ -387,8 +440,13 @@ router.post('/generate-listing/stream', async (req: Request, res: Response) => {
     res.setHeader('X-Accel-Buffering', 'no')
     res.flushHeaders()
 
-    if (!isAdmin(req)) {
-      // Non-admin: stream demo data as SSE (frontend expects SSE, not a plain JSON body)
+    if (!resolved) {
+      if (actor.role === 'admin') {
+        res.write(`data: ${JSON.stringify({ type: 'error', message: 'API key is required. Please configure it in Model Manager.' })}\n\n`)
+        res.end()
+        return
+      }
+      // No key configured: stream demo data as SSE (the frontend expects SSE).
       await streamDemoSse((line) => res.write(line), {
         productId,
         platform,
@@ -398,14 +456,15 @@ router.post('/generate-listing/stream', async (req: Request, res: Response) => {
       return
     }
 
-    if (!apiKey) {
-      res.write(`data: ${JSON.stringify({ type: 'error', message: 'API key is required. Please configure it in Model Manager.' })}\n\n`)
-      res.end()
-      return
-    }
-
     const prompt = await buildGroundedPrompt(productData, platform, template, language)
-    const provider = providerId || 'deepseek'
+    const provider = resolved.providerId
+    const streamOptions = {
+      model: resolved.model,
+      temperature: resolved.temperature,
+      max_tokens: resolved.maxTokens,
+      baseUrl: resolved.baseUrl,
+      disableThinking: provider === 'deepseek' || /deepseek/i.test(resolved.baseUrl),
+    }
 
     const sse = (obj: unknown) => res.write(`data: ${JSON.stringify(obj)}\n\n`)
 
@@ -415,9 +474,9 @@ router.post('/generate-listing/stream', async (req: Request, res: Response) => {
     try {
       for await (const chunk of modelService.callProviderAPIStream(
         provider,
-        apiKey,
+        resolved.apiKey,
         deepseekService.buildMessages(prompt, language),
-        { model, temperature, max_tokens: maxTokens, disableThinking: provider === 'deepseek' },
+        streamOptions,
       )) {
         accumulated += chunk
         const fields = extractListingFields(accumulated)
@@ -451,13 +510,11 @@ router.post('/generate-listing/stream', async (req: Request, res: Response) => {
           )
           const retry = await modelService.callProviderAPI(
             provider,
-            apiKey,
+            resolved.apiKey,
             deepseekService.buildMessages(prompt, language, { languageRetry: true }),
             {
-              model,
+              ...streamOptions,
               temperature: 0.2,
-              max_tokens: maxTokens,
-              disableThinking: provider === 'deepseek',
             },
           )
           const repaired = retry ? parseListing(retry.choices?.[0]?.message?.content) : null
@@ -506,6 +563,7 @@ router.post('/generate-listing/stream', async (req: Request, res: Response) => {
       res.end()
     }
   } catch (error) {
+    if (configFailure(res, error)) return
     console.error('Stream generate error:', error)
     res.status(500).json({ error: 'Failed to stream generate listing', code: 'ERR_STREAM_GENERATE' })
   }

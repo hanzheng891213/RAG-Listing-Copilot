@@ -178,10 +178,6 @@ export const useListingStore = defineStore('listing', () => {
         productData: product,
         providerId: activeProvider,
         language: selectedLanguage.value,
-        apiKey: activeCfg?.apiKey,
-        model: activeCfg?.activeModel,
-        temperature: activeCfg?.temperature,
-        maxTokens: activeCfg?.maxTokens,
       },
       // onField
       (field: string, value: any) => {
@@ -232,10 +228,6 @@ export const useListingStore = defineStore('listing', () => {
         productData: product,
         providerId: activeCfg?.providerId,
         language: language || selectedLanguage.value,
-        apiKey: activeCfg?.apiKey,
-        model: activeCfg?.activeModel,
-        temperature: activeCfg?.temperature,
-        maxTokens: activeCfg?.maxTokens,
       })) as unknown as GeneratedListing
       // The user stopped this session (or started another) while the fallback
       // was in flight; its late result must not resurrect or overwrite it.

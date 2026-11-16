@@ -102,10 +102,13 @@ class ModelService {
     providerId: string,
     apiKey: string,
     messages: Array<{ role: string; content: string }>,
-    options?: { model?: string; temperature?: number; max_tokens?: number; disableThinking?: boolean },
+    options?: { model?: string; temperature?: number; max_tokens?: number; disableThinking?: boolean; baseUrl?: string },
   ): Promise<{ choices: Array<{ message: { content: string } }>; usage?: { prompt_tokens: number; completion_tokens: number } } | null> {
     const provider = BUILTIN_PROVIDERS.find((p) => p.id === providerId)
-    if (!provider || !apiKey) return null
+    // A custom provider has no built-in entry: the stored base URL is the only
+    // endpoint. Both paths share the OpenAI-compatible request shape.
+    const baseUrl = (options?.baseUrl || provider?.baseUrl || '').replace(/\/+$/, '')
+    if (!baseUrl || !apiKey) return null
 
     // No fallback catalogue: the caller must send the model name the user got
     // from the provider's website. Sending a guessed default is worse than
@@ -126,7 +129,7 @@ class ModelService {
     // 结构化任务直接禁用 thinking 得到即时的纯 JSON 输出
     if (options?.disableThinking) payload.thinking = { type: 'disabled' }
 
-    const response = await fetch(`${provider.baseUrl}/chat/completions`, {
+    const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -167,10 +170,11 @@ class ModelService {
     providerId: string,
     apiKey: string,
     messages: Array<{ role: string; content: string }>,
-    options?: { model?: string; temperature?: number; max_tokens?: number; disableThinking?: boolean },
+    options?: { model?: string; temperature?: number; max_tokens?: number; disableThinking?: boolean; baseUrl?: string },
   ): AsyncGenerator<string, void, unknown> {
     const provider = BUILTIN_PROVIDERS.find((p) => p.id === providerId)
-    if (!provider || !apiKey) return
+    const baseUrl = (options?.baseUrl || provider?.baseUrl || '').replace(/\/+$/, '')
+    if (!baseUrl || !apiKey) return
 
     const resolvedModel = (options?.model ?? '').trim()
     if (!resolvedModel) {
@@ -191,7 +195,7 @@ class ModelService {
     }
     if (options?.disableThinking) payload.thinking = { type: 'disabled' }
 
-    const response = await fetch(`${provider.baseUrl}/chat/completions`, {
+    const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

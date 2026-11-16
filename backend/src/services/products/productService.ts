@@ -34,6 +34,8 @@ export interface ProductRowInput {
   fields: Record<string, string>
 }
 
+import type { FinanceSourceRow } from './finance.js'
+
 export interface SaveBatchInput {
   actor: { userId: string; userName: string; isAdmin: boolean }
   items: ProductRowInput[]
@@ -145,7 +147,8 @@ export class ProductService {
         )
       }
       rows.sort(
-        (a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt),
+        (a, b) =>
+          b.createdAt.localeCompare(a.createdAt) || b.updatedAt.localeCompare(a.updatedAt),
       )
       const totalItems = rows.length
       return {
@@ -188,7 +191,7 @@ export class ProductService {
       const rows = await this.db
         .prepare(
           `SELECT * FROM supplier_products ${whereSql}
-           ORDER BY sort_order ASC, created_at ASC
+           ORDER BY created_at DESC, updated_at DESC
            LIMIT ? OFFSET ?`,
         )
         .bind(...params, pageSize, offset)
@@ -206,6 +209,53 @@ export class ProductService {
       }
     } catch (err) {
       if (isTableMissing(err)) return { ...empty, tableMissing: true }
+      throw err
+    }
+  }
+
+  /**
+   * Raw rows for the finance dashboard. One scan, newest first, hard-capped so
+   * an unexpectedly large table cannot blow the Worker response or the D1
+   * read budget. The finance calculation itself is pure (finance.ts).
+   */
+  async financeRows(limit = 5000): Promise<FinanceSourceRow[]> {
+    const cap = Math.min(Math.max(Math.trunc(limit) || 5000, 1), 10_000)
+
+    if (this.ephemeral) {
+      return [...this.memory.values()]
+        .sort(
+          (a, b) =>
+            b.createdAt.localeCompare(a.createdAt) || b.updatedAt.localeCompare(a.updatedAt),
+        )
+        .slice(0, cap)
+        .map((row) => ({
+          id: row.id,
+          ownerId: row.ownerId,
+          ownerName: row.ownerName,
+          fields: row.fields,
+          updatedAt: row.updatedAt,
+        }))
+    }
+
+    try {
+      const rows = await this.db
+        .prepare(
+          `SELECT id, owner_id, owner_name, fields, updated_at
+             FROM supplier_products
+            ORDER BY created_at DESC
+            LIMIT ?`,
+        )
+        .bind(cap)
+        .all()
+      return (rows?.results ?? []).map((row: any) => ({
+        id: String(row.id),
+        ownerId: String(row.owner_id ?? ''),
+        ownerName: String(row.owner_name ?? ''),
+        fields: parseFields(row.fields),
+        updatedAt: String(row.updated_at ?? ''),
+      }))
+    } catch (err) {
+      if (isTableMissing(err)) return []
       throw err
     }
   }

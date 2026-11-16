@@ -6,9 +6,9 @@
  * this module keeps one seed implementation that runs on both runtimes.
  *
  * Each document exists twice: English under knowledge-base/<category>/ and
- * Chinese under knowledge-base/zh/<category>/. The English body is the one that
- * gets embedded (the embedding model has no Chinese support); the Chinese body
- * travels alongside for display.
+ * Chinese under knowledge-base/zh/<category>/. Both bodies are chunked and
+ * embedded (bge-m3 is multilingual); the Chinese body is also what the UI shows
+ * when the locale is Chinese.
  *
  * Run: npm run seed:generate
  */
@@ -187,7 +187,7 @@ export interface SeedDoc {
   titleZh: string
   /** English body. This is what gets embedded and retrieved. */
   content: string
-  /** Chinese body, display only — never embedded. */
+  /** Chinese body, embedded alongside the English body and shown in zh UI. */
   contentZh: string
   category: KnowledgeCategory
   platform?: Platform

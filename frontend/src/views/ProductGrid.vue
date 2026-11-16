@@ -18,6 +18,7 @@ import { useModelStore } from '@/stores/modelStore'
 import { useSupplierStore } from '@/stores/supplierStore'
 import { uploadSupplier } from '@/api/supplier'
 import { FILE_ACCEPT_EXTENSIONS, GRID_DEFAULT_PAGE_SIZE, PLATFORMS } from '@/utils/constants'
+import { clearGridDraft, loadGridDraft, saveGridDraft } from '@/utils/gridDraftCache'
 import type { GridImportIssue, GridLayout, GridRow } from '@/types/grid'
 
 /**
@@ -225,12 +226,50 @@ onMounted(async () => {
 
   // A file dropped outside this page is stashed by the layout and picked up
   // here once the grid is ready.
+  await restoreImportDraft()
+
   const pending = supplierStore.pendingFile as File | null
   if (pending) {
     supplierStore.setPendingFile(null)
     void importFile(pending)
   }
 })
+
+/**
+ * Re-offers an import whose batch save never completed (network drop, expired
+ * token, closed tab). The draft is sessionStorage, so it is per-tab and expires
+ * after two hours; it is never a second source of truth for saved rows.
+ */
+async function restoreImportDraft(): Promise<void> {
+  const draft = loadGridDraft(ownerId())
+  if (!draft) return
+
+  try {
+    await ElMessageBox.confirm(
+      t('grid.draftFound', {
+        file: draft.fileName,
+        count: draft.records.length,
+        time: new Date(draft.savedAt).toLocaleString(),
+      }),
+      t('grid.draftTitle'),
+      {
+        type: 'warning',
+        confirmButtonText: t('grid.draftRestore'),
+        cancelButtonText: t('grid.draftDiscard'),
+      },
+    )
+  } catch {
+    clearGridDraft(ownerId())
+    return
+  }
+
+  const result = grid.importRecords(draft.records, 2)
+  if (result.added > 0) {
+    ElMessage.info(t('grid.draftRestored', { count: result.added }))
+  } else {
+    clearGridDraft(ownerId())
+  }
+}
 
 onBeforeUnmount(() => {
   resizeObserver?.disconnect()
@@ -304,7 +343,10 @@ function onDelete(): void {
 
 async function onSave(): Promise<boolean> {
   gridRef.value?.commitEditing()
-  return await grid.savePage()
+  const ok = await grid.savePage()
+  // Saving the page also commits a restored import, so the recovery draft can go.
+  if (ok) clearGridDraft(ownerId())
+  return ok
 }
 
 async function onDiscard(): Promise<void> {
@@ -421,6 +463,7 @@ async function importFile(file: File): Promise<void> {
   if (importing.value) return
 
   importing.value = true
+  let draftSaved = false
   try {
     const response = await uploadSupplier(file)
     const products = response.products ?? []
@@ -429,10 +472,12 @@ async function importFile(file: File): Promise<void> {
       return
     }
 
-    const result = grid.importRecords(
-      products.map((product) => product.rawData),
-      2,
-    )
+    const records = products.map((product) => product.rawData)
+    // Cache before the rows touch the grid: if the batch save fails, a reload
+    // can still offer to restore exactly what was imported.
+    draftSaved = saveGridDraft(ownerId(), file.name, records)
+
+    const result = grid.importRecords(records, 2)
     importReport.value = {
       version: ++reportVersion,
       fileName: file.name,
@@ -442,6 +487,7 @@ async function importFile(file: File): Promise<void> {
     }
 
     if (result.added === 0) {
+      clearGridDraft(ownerId())
       reportOpen.value = true
       ElMessage.warning(t('grid.importNothing'))
       return
@@ -450,14 +496,20 @@ async function importFile(file: File): Promise<void> {
     const saved = await grid.saveAll()
     if (!saved) {
       ElMessage.warning(t('grid.importPartial', { count: result.added }))
+      if (draftSaved) ElMessage.info(t('grid.draftKept'))
     } else {
+      clearGridDraft(ownerId())
       ElMessage.success(t('grid.importedSaved', { count: result.added }))
+      // Newest rows sort first now, so an import made from page 3 would vanish
+      // from view after the reload. Jump to page 1 once, after saving.
+      if (page.value !== 1) await grid.loadPage(1)
     }
     if (result.skipped > 0) reportOpen.value = true
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     console.error('[ProductGrid] import failed:', error)
     ElMessage.error(`${t('grid.importFailed')}: ${message}`)
+    if (draftSaved) ElMessage.info(t('grid.draftKept'))
   } finally {
     importing.value = false
   }

@@ -1,14 +1,9 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useModelStore } from '@/stores/modelStore'
 
 const { t } = useI18n()
 const modelStore = useModelStore()
-
-onMounted(() => {
-  modelStore.loadConfigs()
-})
 </script>
 
 <template>
@@ -57,7 +52,7 @@ onMounted(() => {
         </div>
         <div class="monitor-row">
           <span class="label">API Key</span>
-          <span class="value key-masked">{{ modelStore.maskKey(modelStore.activeConfig.apiKey) }}</span>
+          <span class="value key-masked">{{ modelStore.maskKey(modelStore.activeConfig.keyLast4) }}</span>
         </div>
       </template>
     </div>

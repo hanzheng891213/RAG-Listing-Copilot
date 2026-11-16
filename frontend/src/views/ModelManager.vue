@@ -13,10 +13,10 @@ import {
   getUsageStats,
   normaliseUsageStats,
   type ModelProvider,
-  type ProviderConfig,
   type UsageStats,
 } from '@/api/models'
 import { useModelStore } from '@/stores/modelStore'
+import errors from '@/locales/errors'
 
 use([PieChart, BarChart, TitleComponent, TooltipComponent, LegendComponent, GridComponent, CanvasRenderer])
 
@@ -29,8 +29,19 @@ use([PieChart, BarChart, TitleComponent, TooltipComponent, LegendComponent, Grid
  * which model is actually being billed. A provider now carries one free model
  * name typed by the user from the provider's own documentation.
  */
-const { t, te } = useI18n()
+const { t, te, locale } = useI18n()
 const modelStore = useModelStore()
+
+/** Server error code → localized text; falls back to the server message. */
+function errorMessage(error: any, fallbackKey: string): string {
+  const code = error?.response?.data?.code
+  const table = (errors as Record<string, Record<string, string>>)[locale.value]
+  return (
+    (code && (table?.[code] || errors.en?.[code])) ||
+    error?.response?.data?.error ||
+    t(fallbackKey)
+  )
+}
 
 const editingId = ref('')
 const saving = ref(false)
@@ -53,7 +64,17 @@ const providers = computed(() => modelStore.providers)
 const configs = computed(() => modelStore.configs)
 
 /** Draft of the currently edited provider; never the stored object. */
-const editForm = ref<ProviderConfig>({
+interface ProviderDraft {
+  providerId: string
+  /** Write-only: blank means "keep the stored key". */
+  apiKey: string
+  activeModel: string
+  temperature: number
+  maxTokens: number
+  baseUrl: string
+}
+
+const editForm = ref<ProviderDraft>({
   providerId: '',
   apiKey: '',
   activeModel: '',
@@ -68,15 +89,20 @@ function displayName(provider: ModelProvider): string {
 }
 
 function isConfigured(providerId: string): boolean {
-  return Boolean(configs.value.find((c) => c.providerId === providerId && c.apiKey))
+  const config = configs.value.find((entry) => entry.providerId === providerId)
+  return Boolean(config?.hasKey && config.activeModel)
 }
 
 function isActive(providerId: string): boolean {
   return modelStore.activeProviderId === providerId
 }
 
-function storedKeyOf(providerId: string): string {
-  return modelStore.getConfig(providerId)?.apiKey || ''
+function keyLast4Of(providerId: string): string {
+  return modelStore.getConfig(providerId)?.keyLast4 || ''
+}
+
+function hasStoredKey(providerId: string): boolean {
+  return Boolean(modelStore.getConfig(providerId)?.hasKey)
 }
 
 function endpointOf(provider: ModelProvider): string {
@@ -144,23 +170,33 @@ function onAddProvider(): void {
     ElMessage.warning(t('modelManager.providerNameRequired'))
     return
   }
-  const id = modelStore.addProvider({ name, baseUrl: addForm.value.baseUrl })
-  if (!id) {
-    ElMessage.error(t('modelManager.addProviderFailed'))
+  if (!addForm.value.baseUrl.trim()) {
+    ElMessage.warning(t('modelManager.baseUrlRequired'))
     return
   }
-  adding.value = false
-  ElMessage.success(t('modelManager.providerAdded'))
-  loadDraft(id)
-  editingId.value = id
+  void (async () => {
+    try {
+      const id = await modelStore.addProvider({ name, baseUrl: addForm.value.baseUrl })
+      if (!id) {
+        ElMessage.error(t('modelManager.addProviderFailed'))
+        return
+      }
+      adding.value = false
+      ElMessage.success(t('modelManager.providerAdded'))
+      loadDraft(id)
+      editingId.value = id
+    } catch (error) {
+      ElMessage.error(errorMessage(error, 'modelManager.addProviderFailed'))
+    }
+  })()
 }
 
 async function onSave(providerId: string): Promise<void> {
   if (saving.value) return
 
   const existing = modelStore.getConfig(providerId)
-  const apiKey = editForm.value.apiKey.trim() || existing?.apiKey || ''
-  if (!apiKey) {
+  const typedKey = editForm.value.apiKey.trim()
+  if (!typedKey && !existing?.hasKey) {
     ElMessage.warning(t('modelManager.keyRequired'))
     return
   }
@@ -183,28 +219,34 @@ async function onSave(providerId: string): Promise<void> {
 
   saving.value = true
   try {
-    modelStore.updateProviderConfig({
+    await modelStore.updateProviderConfig({
       providerId,
-      apiKey,
+      apiKey: typedKey || undefined,
       activeModel,
       temperature: editForm.value.temperature,
       maxTokens: editForm.value.maxTokens,
       baseUrl,
+      providerName: existing?.providerName,
     })
-    if (!modelStore.activeProviderId) modelStore.setActiveProvider(providerId)
+    if (!modelStore.activeProviderId) await modelStore.setActiveProvider(providerId)
     editingId.value = ''
+    editForm.value.apiKey = ''
     ElMessage.success(t('modelManager.saved'))
-  } catch {
-    ElMessage.error(t('modelManager.saveFailed'))
+  } catch (error) {
+    ElMessage.error(errorMessage(error, 'modelManager.saveFailed'))
   } finally {
     saving.value = false
   }
 }
 
-function onDeleteKey(providerId: string): void {
-  modelStore.clearProviderKey(providerId)
-  editForm.value.apiKey = ''
-  ElMessage.success(t('modelManager.keyDeleted'))
+async function onDeleteKey(providerId: string): Promise<void> {
+  try {
+    await modelStore.clearProviderKey(providerId)
+    editForm.value.apiKey = ''
+    ElMessage.success(t('modelManager.keyDeleted'))
+  } catch (error) {
+    ElMessage.error(errorMessage(error, 'modelManager.saveFailed'))
+  }
 }
 
 async function onDeleteProvider(providerId: string): Promise<void> {
@@ -219,19 +261,27 @@ async function onDeleteProvider(providerId: string): Promise<void> {
   } catch {
     return
   }
-  if (modelStore.removeProvider(providerId)) {
-    if (editingId.value === providerId) editingId.value = ''
-    ElMessage.success(t('modelManager.providerDeleted'))
+  try {
+    if (await modelStore.removeProvider(providerId)) {
+      if (editingId.value === providerId) editingId.value = ''
+      ElMessage.success(t('modelManager.providerDeleted'))
+    }
+  } catch (error) {
+    ElMessage.error(errorMessage(error, 'modelManager.saveFailed'))
   }
 }
 
-function onUseAsDefault(providerId: string): void {
+async function onUseAsDefault(providerId: string): Promise<void> {
   if (!isConfigured(providerId)) {
     ElMessage.warning(t('modelManager.keyRequiredFirst'))
     return
   }
-  modelStore.setActiveProvider(providerId)
-  ElMessage.success(t('modelManager.defaultSet'))
+  try {
+    await modelStore.setActiveProvider(providerId)
+    ElMessage.success(t('modelManager.defaultSet'))
+  } catch (error) {
+    ElMessage.error(errorMessage(error, 'modelManager.saveFailed'))
+  }
 }
 
 async function loadStats(): Promise<void> {
@@ -248,7 +298,9 @@ async function loadStats(): Promise<void> {
 
 async function loadData(): Promise<void> {
   try {
-    await modelStore.loadConfigs()
+    // The auth store already loads configs on login; only fetch again when this
+    // page is opened before that request finished (direct URL / hard refresh).
+    if (!modelStore.loaded) await modelStore.loadConfigs()
   } catch {
     // directory unavailable: local configs still render
   }
@@ -457,8 +509,8 @@ function formatTokens(value: number): string {
                   </a>
                 </div>
 
-                <div v-if="storedKeyOf(p.id)" class="stored-key">
-                  <code>{{ modelStore.maskKey(storedKeyOf(p.id)) }}</code>
+                <div v-if="hasStoredKey(p.id)" class="stored-key">
+                  <code>{{ modelStore.maskKey(keyLast4Of(p.id)) }}</code>
                   <ConfirmButton
                     size="small"
                     text
@@ -477,9 +529,9 @@ function formatTokens(value: number): string {
                   show-password
                   size="small"
                   autocomplete="new-password"
-                  :placeholder="storedKeyOf(p.id) ? t('modelManager.keyKeepHint') : t('modelManager.apiKeyPlaceholder')"
+                  :placeholder="hasStoredKey(p.id) ? t('modelManager.keyKeepHint') : t('modelManager.apiKeyPlaceholder')"
                 />
-                <p v-if="storedKeyOf(p.id)" class="field-hint">{{ t('modelManager.keyStoredHint') }}</p>
+                <p v-if="hasStoredKey(p.id)" class="field-hint">{{ t('modelManager.keyStoredHint') }}</p>
               </div>
 
               <div class="field">

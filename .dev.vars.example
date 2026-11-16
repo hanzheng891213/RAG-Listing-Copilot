@@ -1,9 +1,20 @@
 # ─── Required: JWT Secret for auth tokens ──────────────────────────────
 # Generate a strong secret:  node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+# There is no fallback: a missing secret makes /api/auth/* return 503.
 JWT_SECRET="replace-with-a-random-64-char-hex-string"
+
+# ─── Required: AES-GCM key for per-user provider API keys ──────────────
+# Generate: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+# Rotating this key makes every stored provider key undecryptable; users must
+# re-enter their keys.
+CONFIG_ENC_KEY="replace-with-32-random-bytes-base64"
 
 # ─── Required for AI API calls ─────────────────────────────────────────
 DEEPSEEK_API_KEY="sk-your-deepseek-api-key"
+
+# ─── Optional: allow local relay endpoints (development only) ──────────
+# false in production: a custom provider on localhost/loopback is an SSRF surface.
+ALLOW_LOCAL_PROVIDER="false"
 
 # ─── Optional: CORS allowed origins (comma-separated) ──────────────────
 # Add your production domain here. Default: http://localhost:5175,http://localhost:3001

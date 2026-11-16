@@ -19,12 +19,12 @@ export interface SeedProgress {
 }
 
 /**
- * Documents per call when the caller doesn't specify. Every chunk costs one
- * embedding request plus one vector upsert, so a Worker request has a hard
- * subrequest cap. The English bodies chunk to roughly 22 pieces each, so two
- * per call already brushed against the cap and left documents half-ingested.
+ * Documents per call when the caller doesn't specify. Embedding now batches all
+ * chunks of one body into a single Workers AI request, so the old per-chunk
+ * subrequest pressure is gone; three documents per call stays comfortably
+ * inside the 50-subrequest free-plan budget (embed + vector upsert + D1 write).
  */
-export const DEFAULT_SEED_BATCH = 1
+export const DEFAULT_SEED_BATCH = 3
 
 /**
  * Ingest seed documents that aren't already present, matched by title, so

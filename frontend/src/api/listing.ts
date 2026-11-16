@@ -9,10 +9,6 @@ export function generateListing(data: {
   productData: SupplierProduct
   providerId?: string
   language?: string
-  apiKey?: string
-  model?: string
-  temperature?: number
-  maxTokens?: number
 }) {
   return client.post<GeneratedListing>('/generate-listing', data)
 }
@@ -31,10 +27,6 @@ export function generateListingStream(
     productData: SupplierProduct
     providerId?: string
     language?: string
-    apiKey?: string
-    model?: string
-    temperature?: number
-    maxTokens?: number
   },
   onField: (field: string, value: any) => void,
   onDone: (listing: GeneratedListing, complianceResults: ComplianceResult[]) => void,
@@ -42,13 +34,11 @@ export function generateListingStream(
 ): AbortController {
   const controller = new AbortController()
   const token = localStorage.getItem('rag-copilot-token')
-  const activeProvider = localStorage.getItem('rag-copilot-active-provider')
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   }
   if (token) headers['Authorization'] = `Bearer ${token}`
-  if (activeProvider) headers['X-Active-Provider'] = activeProvider
 
   ;(async () => {
     try {

@@ -180,7 +180,7 @@ async function onApply(index: number): Promise<void> {
   }
 
   const cfg = modelStore.activeConfig
-  if (!cfg?.apiKey) {
+  if (!cfg?.hasKey) {
     ElMessage.warning(t('chat.needModel'))
     return
   }
@@ -193,9 +193,6 @@ async function onApply(index: number): Promise<void> {
       suggestion: message.content,
       listing,
       providerId: cfg.providerId,
-      apiKey: cfg.apiKey,
-      model: cfg.activeModel,
-      maxTokens: cfg.maxTokens,
     })
 
     const fields = store.applyPatch(patch ?? {})

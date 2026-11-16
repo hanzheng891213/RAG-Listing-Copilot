@@ -76,10 +76,6 @@ export const useChatStore = defineStore('chat', () => {
           messages: messages.value.slice(-11, -1), // last 10 before the placeholder
           listingContext,
           providerId: activeCfg?.providerId,
-          apiKey: activeCfg?.apiKey,
-          model: activeCfg?.activeModel,
-          temperature: activeCfg?.temperature,
-          maxTokens: activeCfg?.maxTokens,
         },
         // onChunk
         (content: string) => {
