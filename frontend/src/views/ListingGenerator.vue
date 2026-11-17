@@ -24,6 +24,20 @@ const { store, handleRegenerate, handleExport, platforms } = useListingGenerator
 const modelStore = useModelStore()
 
 /**
+ * Without a provider the page falls back to static local mocks, so the product
+ * picker and the batch queue stay testable. It is a fallback, not a silent
+ * success: the preview marks the result as demo data.
+ */
+const mockMode = computed(() => modelStore.loaded && !modelStore.hasAnyConfigured)
+let mockNoticeShown = false
+
+function notifyMockMode(): void {
+  if (mockNoticeShown) return
+  mockNoticeShown = true
+  ElMessage.info(t('listing.mockModeToast'))
+}
+
+/**
  * Products come from the 上架表 rows, not from a separate upload store: the
  * table is the source of truth, and a generated listing is written back into
  * its row so both pages stay in sync.
@@ -147,7 +161,12 @@ onUnmounted(() => {
 
 onMounted(async () => {
   try {
-    await loadAll()
+    // The mock decision needs the config list; load it alongside the rows so a
+    // page refresh does not wait for two round trips in sequence.
+    await Promise.all([
+      modelStore.loaded ? Promise.resolve() : modelStore.loadConfigs(),
+      loadAll(),
+    ])
     hydrateTabs()
   } catch (err) {
     console.error('[Listing] failed to load table rows:', err)
@@ -242,18 +261,26 @@ function waitForGeneration(productId: string): Promise<GeneratedListing | null> 
 type GenerateOutcome = 'ok' | 'failed' | 'skipped'
 
 async function generateProduct(product: GridProduct, language: string): Promise<GenerateOutcome> {
-  if (!modelStore.hasAnyConfigured) {
-    ElMessage.warning(t('listing.noModelForGenerate'))
-    router.push('/model-manager')
-    return 'failed'
-  }
+  if (generatingIds.value.includes(product.id)) return 'skipped'
+
+  // Resolve the provider choice per item: a batch may start before configs
+  // finished loading after a refresh.
+  if (!modelStore.loaded) await modelStore.loadConfigs()
+  const useMock = !modelStore.hasAnyConfigured
+
+  // The config load can yield; a second click may have started meanwhile.
   if (generatingIds.value.includes(product.id)) return 'skipped'
 
   focusedProductId.value = product.id
   generatingIds.value = [...generatingIds.value, product.id]
   try {
     const completion = waitForGeneration(product.id)
-    void store.generate(product, language)
+    if (useMock) {
+      notifyMockMode()
+      store.generateMock(product, language)
+    } else {
+      void store.generate(product, language)
+    }
     const listing = await completion
 
     // Paused/cancelled while this item was streaming: the request was aborted
@@ -301,11 +328,10 @@ function generateFocusedProduct(): void {
 
 async function onBatchGenerate(payload: { products: GridProduct[]; language: string }): Promise<void> {
   if (batch.value || payload.products.length === 0) return
-  if (!modelStore.hasAnyConfigured) {
-    ElMessage.warning(t('listing.noModelForGenerate'))
-    router.push('/model-manager')
-    return
-  }
+  if (!modelStore.loaded) await modelStore.loadConfigs()
+  // Batch generation is the main thing mock mode exists to verify: each row
+  // goes through the same queue, streaming flags, pause and write-back.
+  if (!modelStore.hasAnyConfigured) notifyMockMode()
 
   batch.value = {
     products: [...payload.products],
@@ -417,10 +443,6 @@ function onRegenerate() {
     ElMessage.warning(t('listing.generationBusy'))
     return
   }
-  if (!modelStore.hasAnyConfigured) {
-    router.push('/model-manager')
-    return
-  }
   // Regenerate the product the active tab shows, not whatever was generated
   // last: after switching tabs those two are different rows.
   const product = products.value.find(
@@ -523,10 +545,11 @@ async function onChatApplied(payload: { listing: GeneratedListing }): Promise<vo
       <!-- Center: listing + SEO insights -->
       <div class="content-area">
         <div class="listing-area">
-          <!-- No model configured warning -->
-          <div v-if="!modelStore.hasAnyConfigured && products.length > 0" class="no-model-banner">
-            <el-icon><WarningFilled /></el-icon>
-            <span>{{ t('listing.noModelForGenerate') }}</span>
+          <!-- No model configured: generation still works, locally and for free,
+               so the batch flow can be verified before paying for tokens. -->
+          <div v-if="mockMode && products.length > 0" class="no-model-banner">
+            <el-icon><InfoFilled /></el-icon>
+            <span>{{ t('listing.mockModeBanner') }}</span>
             <el-button size="small" type="primary" @click="router.push('/model-manager')">
               {{ t('listing.goToModelManager') }}
             </el-button>

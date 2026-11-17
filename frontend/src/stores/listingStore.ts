@@ -8,13 +8,30 @@ import { generateListing, generateListingStream } from '@/api/listing'
 import { useModelStore } from '@/stores/modelStore'
 import i18n from '@/locales'
 
-function createDemoListing(rawData: Record<string, string>, platform: Platform): GeneratedListing {
-  const label = Object.values(rawData).find((v) => v) || 'Product'
+/**
+ * How long one mock item "takes". Short but non-zero: a batch of mock items
+ * still shows per-item progress and can be paused between rows.
+ */
+const MOCK_ITEM_DELAY_MS = 550
+
+function createDemoListing(
+  rawData: Record<string, string>,
+  platform: Platform,
+  productId = 'demo',
+): GeneratedListing {
+  // Prefer the columns that actually identify the product; the fallback keeps
+  // working for a row that only carries an extra custom column.
+  const label =
+    rawData?.productName ||
+    rawData?.title ||
+    rawData?.sku ||
+    Object.values(rawData ?? {}).find((v) => v) ||
+    'Product'
   const isZh = i18n.global.locale.value === 'zh'
 
   return {
     id: generateId(),
-    productId: 'demo',
+    productId,
     title: isZh
       ? `优质${label} - 高品质 | 快速发货 | 超值之选`
       : `Premium ${label} - High Quality | Fast Shipping | Best Value`,
@@ -80,6 +97,7 @@ export const useListingStore = defineStore('listing', () => {
   /** Which session the in-flight stream belongs to, so switching tabs can't misroute a pause. */
   const generatingListingId = ref('')
   let streamController: AbortController | null = null
+  let mockTimer: ReturnType<typeof setTimeout> | null = null
 
   // 流式生成状态跟踪
   const receivedFields = ref<Set<string>>(new Set())
@@ -216,6 +234,54 @@ export const useListingStore = defineStore('listing', () => {
     )
   }
 
+  /**
+   * Static local listing, used when no model is configured.
+   *
+   * It runs through the same session, "streaming" and abort flags as a real
+   * request, so single generation, pause/stop and the batch queue can be
+   * exercised end-to-end without a provider. The result is marked `isDemo`, and
+   * the caller writes it back to the table exactly like a generated one.
+   */
+  function generateMock(product: SupplierProduct, language?: string): void {
+    lastProduct.value = product
+    if (language) selectedLanguage.value = language
+    generationError.value = ''
+
+    if (mockTimer) {
+      clearTimeout(mockTimer)
+      mockTimer = null
+    }
+
+    // Same rule as a real generation: only this product's previous result is
+    // replaced, other sessions stay in the list.
+    generatedListings.value = generatedListings.value.filter(
+      (item) => item.productId !== product.id,
+    )
+    receivedFields.value = new Set()
+
+    const placeholder = createEmptyListing(product, selectedPlatform.value)
+    generatingListingId.value = placeholder.id
+    generatedListings.value.unshift(placeholder)
+    activeListing.value = placeholder
+    versionHistory.value = [placeholder]
+    isStreaming.value = true
+    isGenerating.value = true
+
+    const demo = createDemoListing(product.rawData ?? {}, selectedPlatform.value, product.id)
+    const sessionId = placeholder.id
+    mockTimer = setTimeout(() => {
+      mockTimer = null
+      // Stopped/paused or replaced while "generating": the late mock must not
+      // resurrect a session the user already ended.
+      if (generatingListingId.value !== sessionId) return
+      receivedFields.value = new Set(['title', 'bulletPoints', 'description', 'keywords'])
+      replaceSession(sessionId, { ...demo, id: sessionId })
+      isStreaming.value = false
+      isGenerating.value = false
+      generatingListingId.value = ''
+    }, MOCK_ITEM_DELAY_MS)
+  }
+
   async function tryNonStreaming(product: SupplierProduct, language: string | undefined, listingId: string) {
     const modelStore = useModelStore()
     const activeCfg = modelStore.activeConfig
@@ -268,6 +334,10 @@ export const useListingStore = defineStore('listing', () => {
    * generated listing becomes active again.
    */
   function stopGeneration(): void {
+    if (mockTimer) {
+      clearTimeout(mockTimer)
+      mockTimer = null
+    }
     if (streamController) {
       streamController.abort()
       streamController = null
@@ -410,6 +480,7 @@ export const useListingStore = defineStore('listing', () => {
     hasResults,
     generatingListingId,
     generate,
+    generateMock,
     regenerate,
     stopGeneration,
     findListing,

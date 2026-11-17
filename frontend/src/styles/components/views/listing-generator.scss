@@ -56,6 +56,10 @@
   gap: 16px;
   align-items: start;
   min-height: calc(100vh - 200px);
+  /* Both sticky side panels end 24px above the viewport bottom when pinned
+     (sticky top 80px + this height). Give the product list every pixel above
+     that gutter: at 900px this is ~90px more list than the old 100vh - 192px. */
+  --side-panel-height: calc(100vh - 104px);
 }
 
 /* ---- Left panel (1/4) ---- */
@@ -72,7 +76,7 @@
   /* A definite height (not just max-height) gives the virtual list a real
      viewport; with only max-height the inner flex chain collapses and the
      list renders a single overscan window. */
-  height: calc(100vh - 192px);
+  height: var(--side-panel-height);
   overflow: hidden;
 }
 
@@ -123,7 +127,7 @@
   padding: 0;
   position: sticky;
   top: 80px;
-  height: calc(100vh - 192px);
+  height: var(--side-panel-height);
   display: flex;
   flex-direction: column;
   overflow: hidden;

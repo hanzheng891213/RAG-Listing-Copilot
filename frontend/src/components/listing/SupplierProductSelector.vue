@@ -79,6 +79,9 @@ const allChecked = computed(() => {
   return selectable.length > 0 && selectable.every((product) => props.selectedIds.includes(product.id))
 })
 
+/** Read-only rows cannot be selected, so select-all is pointless without one. */
+const hasSelectable = computed(() => filtered.value.some((product) => product.editable))
+
 const selectedProducts = computed(() =>
   props.products.filter((product) => product.editable && props.selectedIds.includes(product.id)),
 )
@@ -101,9 +104,14 @@ function labelOf(product: GridProduct): string {
 }
 
 function metaOf(product: GridProduct): string {
-  return [product.fields.sku, product.fields.category, product.fields.price]
+  return [product.fields.category, product.fields.price]
     .filter((value) => Boolean(value && value.trim()))
     .join(' · ')
+}
+
+/** The SKU is the row's stable identifier, so it gets its own unshrunk slot. */
+function skuOf(product: GridProduct): string {
+  return (product.fields.sku ?? '').trim()
 }
 
 function isGenerating(product: GridProduct): boolean {
@@ -116,6 +124,17 @@ function isActive(product: GridProduct): boolean {
 
 function onSelect(product: GridProduct): void {
   emit('select-product', product)
+}
+
+/**
+ * The checkbox column is a full-height hit area, so checking a row is not a
+ * pixel hunt. Clicks landing on the checkbox itself are left to it (it emits
+ * its own update), otherwise the click would toggle twice.
+ */
+function onCheckCell(event: MouseEvent, product: GridProduct): void {
+  if (!product.editable) return
+  if ((event.target as HTMLElement | null)?.closest('.el-checkbox')) return
+  emit('toggle', product.id)
 }
 
 function isGenerated(product: GridProduct): boolean {
@@ -177,15 +196,6 @@ function onBatch(): void {
 
     <template v-else>
       <div class="batch-bar">
-        <el-checkbox
-          :model-value="allChecked"
-          :indeterminate="selectedIds.length > 0 && !allChecked"
-          :disabled="busy"
-          size="small"
-          @update:model-value="(value: any) => emit('toggle-all', Boolean(value))"
-        >
-          {{ t('listing.selectAllCount', { count: selectedIds.length }) }}
-        </el-checkbox>
         <div class="batch-actions">
           <el-select v-model="batchLanguage" size="small" class="batch-lang" :disabled="busy">
             <el-option
@@ -231,6 +241,28 @@ function onBatch(): void {
         <template #prefix><el-icon><Search /></el-icon></template>
       </el-input>
 
+      <!-- Column header: the checkbox owns its own column, so select-all and
+           every row checkbox line up instead of floating inside the card. -->
+      <div class="list-head">
+        <div class="head-check">
+          <el-checkbox
+            :model-value="allChecked"
+            :indeterminate="selectedIds.length > 0 && !allChecked"
+            :disabled="busy || !hasSelectable"
+            size="small"
+            :aria-label="t('listing.selectAllCount', { count: selectedIds.length })"
+            @update:model-value="(value: any) => emit('toggle-all', Boolean(value))"
+          />
+        </div>
+        <div class="head-main">
+          <span>{{ t('listing.productColumn') }}</span>
+          <span v-if="selectedIds.length" class="head-selected">
+            {{ t('listing.selectedCount', { count: selectedIds.length }) }}
+          </span>
+        </div>
+        <span class="head-actions">{{ t('listing.actionsColumn') }}</span>
+      </div>
+
       <div ref="containerRef" class="product-list" @scroll="onScroll">
         <div class="vl-spacer" :style="{ height: totalHeight + 'px' }">
           <div class="vl-window" :style="{ transform: `translateY(${offsetY}px)` }">
@@ -253,13 +285,19 @@ function onBatch(): void {
               @keydown.enter.prevent="onSelect(product)"
               @keydown.space.prevent="onSelect(product)"
             >
-              <el-checkbox
-                :model-value="selectedIds.includes(product.id)"
-                :disabled="busy || !product.editable"
-                class="item-check"
-                @click.stop
-                @update:model-value="() => emit('toggle', product.id)"
-              />
+              <div
+                class="item-check-col"
+                :class="{ 'is-selected': selectedIds.includes(product.id) }"
+                @click.stop="onCheckCell($event, product)"
+              >
+                <el-checkbox
+                  :model-value="selectedIds.includes(product.id)"
+                  :disabled="busy || !product.editable"
+                  class="item-check"
+                  @click.stop
+                  @update:model-value="() => emit('toggle', product.id)"
+                />
+              </div>
 
               <div class="product-info">
                 <span class="product-title-row">
@@ -267,12 +305,20 @@ function onBatch(): void {
                   <el-icon v-if="isGenerated(product)" class="product-done-icon"><CircleCheckFilled /></el-icon>
                 </span>
                 <span class="product-sub-row">
-                  <span class="product-meta">{{ metaOf(product) || t('listing.noMeta') }}</span>
-                  <span v-if="isActive(product)" class="product-active-tag">
-                    {{ t('listing.previewing') }}
-                  </span>
+                  <template v-if="skuOf(product) || metaOf(product)">
+                    <span v-if="skuOf(product)" class="product-sku">{{ skuOf(product) }}</span>
+                    <span v-if="skuOf(product) && metaOf(product)" class="product-sub-sep" aria-hidden="true">·</span>
+                    <span class="product-meta">{{ metaOf(product) }}</span>
+                  </template>
+                  <span v-else class="product-meta">{{ t('listing.noMeta') }}</span>
                 </span>
               </div>
+
+              <!-- The active marker floats in the action column's spare top
+                   corner: in the meta row it consumed the width the SKU needs. -->
+              <span v-if="isActive(product)" class="product-active-tag">
+                {{ t('listing.previewing') }}
+              </span>
 
               <div class="btn-row">
                 <button

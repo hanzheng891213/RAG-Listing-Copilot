@@ -1,6 +1,6 @@
 /* components/listing/SupplierProductSelector.vue — component styles. Edit colours and layout here, not in the SFC. */
 
-.product-selector { display: flex; flex-direction: column; gap: 10px; width: 100%; height: 100%; }
+.product-selector { display: flex; flex-direction: column; gap: 10px; width: 100%; height: 100%; --check-col-width: 40px; }
 .selector-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-shrink: 0; }
 .selector-heading { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .selector-subtitle { font-size: 10.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -22,23 +22,42 @@
 .vl-spacer { position: relative; width: 100%; }
 .vl-window { position: absolute; top: 0; left: 0; right: 0; display: flex; flex-direction: column; will-change: transform; }
 
+/* Column header for the list: its checkbox column uses the same width as the
+   rows, so the select-all box sits exactly above every row checkbox. */
+.list-head {
+  display: grid;
+  grid-template-columns: var(--check-col-width) minmax(0, 1fr) auto;
+  align-items: center;
+  flex-shrink: 0;
+  height: 26px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-size: 10.5px;
+}
+.head-check { display: flex; align-items: center; justify-content: center; height: 100%; }
+.head-check :deep(.el-checkbox) { margin-right: 0; height: auto; }
+.head-check :deep(.el-checkbox__inner) { transform: scale(0.9); }
+.head-main { display: flex; align-items: baseline; gap: 8px; min-width: 0; padding-left: 12px; }
+.head-selected { color: var(--accent); font-size: 10.5px; white-space: nowrap; }
+.head-actions { padding-right: 12px; text-align: right; white-space: nowrap; }
+
 /* 66px box + 8px margin = the 74px row height passed to useVirtualList. */
 .product-item {
-  display: flex;
+  display: grid;
+  grid-template-columns: var(--check-col-width) minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   height: 66px;
   margin-bottom: 8px;
   box-sizing: border-box;
-  padding: 10px 12px;
+  padding: 0;
   border: 1px solid var(--product-idle-border);
   border-radius: var(--radius-md);
-  gap: 8px;
   transition: all var(--transition-fast);
   position: relative;
   width: 100%;
   cursor: pointer;
 }
+
 .product-item:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -61,12 +80,19 @@
   border-color: var(--product-done-accent);
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.14);
 }
+/* The "previewing" pill floats above the action buttons instead of sitting in
+   the meta row: there it took the width the SKU needs and hid the identifier
+   on the row the user just clicked. */
 .product-active-tag {
-  flex-shrink: 0;
-  padding: 1px 6px;
+  position: absolute;
+  top: 2px;
+  right: 12px;
+  z-index: 1;
+  pointer-events: none;
+  padding: 0 5px;
   border-radius: 999px;
   font-size: 10px;
-  line-height: 1.45;
+  line-height: 1.2;
   letter-spacing: 0.02em;
   color: var(--accent);
   border: 1px solid var(--accent-dim);
@@ -77,20 +103,47 @@
   border-color: var(--product-done-accent);
   background: rgba(255, 255, 255, 0.1);
 }
-.item-check { flex-shrink: 0; }
-.product-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.item-check-col {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  border-right: 1px solid var(--product-idle-border);
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.item-check-col:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.item-check-col.is-selected { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.item-check-col :deep(.el-checkbox) { margin-right: 0; height: auto; }
+.product-item.is-generated .item-check-col { border-right-color: var(--product-done-border); }
+.product-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 10px 12px; }
 .product-title-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .product-title { font-size: 13px; font-weight: 500; color: var(--product-idle-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.product-sub-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.product-sub-row { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; }
+/* The SKU never shrinks, so category/price truncate first rather than the
+   identifier. It still ellipses if the panel is too narrow for the SKU alone. */
+.product-sku {
+  flex: 0 0 auto;
+  max-width: 100%;
+  font-size: 11px;
+  color: var(--product-idle-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.product-sub-sep { flex: 0 0 auto; font-size: 11px; color: var(--product-idle-muted); }
 .product-meta { flex: 1; min-width: 0; font-size: 11px; color: var(--product-idle-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .product-done-icon { flex-shrink: 0; color: var(--product-done-accent); font-size: 13px; }
 
 /* Deep-green rows need light text on every child, not only the card. */
 .product-item.is-generated .product-title { color: var(--product-done-text); }
-.product-item.is-generated .product-meta { color: var(--product-done-muted); }
+.product-item.is-generated .product-meta,
+.product-item.is-generated .product-sku,
+.product-item.is-generated .product-sub-sep { color: var(--product-done-muted); }
 .no-results { text-align: center; padding: 24px; color: var(--text-muted); font-size: 13px; }
 
-.btn-row { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.btn-row { display: flex; align-items: center; gap: 4px; flex-shrink: 0; padding-right: 12px; }
 
 .gen-btn {
   display: inline-flex;
